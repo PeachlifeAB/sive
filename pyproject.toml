@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sive"
+version = "0.1.0"
+description = "Sync environment variables and secrets from vaults into your shell"
+requires-python = ">=3.11"
+dependencies = [
+    "cryptography>=42.0,<47",
+]
+
+[project.scripts]
+sive = "sive.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sive"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-v", "--tb=short"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-mock>=3.14",
+    "ruff>=0.15",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.ruff.lint.isort]
+known-first-party = ["sive"]

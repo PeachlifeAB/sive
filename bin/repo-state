@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# ETA: ~2s
+# Baseline state for the sive project.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+echo "=== repo ==="
+git rev-parse --short HEAD
+git status --short
+echo ""
+
+echo "=== python ==="
+python3 --version 2>&1 || echo "python3: not found"
+echo ""
+
+echo "=== uv ==="
+uv --version 2>&1 || echo "uv: not found"
+echo ""
+
+echo "=== venv ==="
+if [[ -f .venv/bin/python ]]; then
+  .venv/bin/python --version
+  echo "venv: present"
+else
+  echo "venv: missing"
+fi
+echo ""
+
+echo "=== sive install ==="
+if .venv/bin/python -m sive --version 2>/dev/null; then
+  :
+else
+  echo "sive: not installed in venv"
+fi
+# global uv tool install (used by mise hook)
+if command -v sive &>/dev/null; then
+  echo "global: $(which sive) — $(sive --version)"
+else
+  echo "global: not installed — run: uv tool install --no-cache ."
+fi
+# NOTE: always use --no-cache when reinstalling after source changes
+echo ""
+
+echo "=== mise plugin ==="
+mise plugin ls 2>/dev/null | grep sive || echo "sive not linked — run: mise plugin link sive ."
+echo ""
+
+echo "=== bw cli ==="
+bw --version 2>/dev/null || echo "bw: not found in PATH"
+echo ""
+
+echo "=== vaults.toml ==="
+VAULTS="$HOME/.config/sive/vaults.toml"
+if [[ -f "$VAULTS" ]]; then
+  echo "present: $VAULTS"
+  cat "$VAULTS"
+else
+  echo "missing: $VAULTS"
+fi
+echo ""
+
+echo "=== mise config ==="
+MISE_CONFIG="$HOME/.config/mise/config.toml"
+if [[ -f "$MISE_CONFIG" ]]; then
+  echo "present: $MISE_CONFIG"
+  cat "$MISE_CONFIG"
+else
+  echo "missing: $MISE_CONFIG"
+fi
+echo ""
+
+echo "=== mise cache state ==="
+mise cache path 2>/dev/null || echo "mise cache path unavailable"
+MISE_ENV_CACHE_DIR="$HOME/.local/state/mise/env-cache"
+if [[ -d "$MISE_ENV_CACHE_DIR" ]]; then
+  echo "env-cache-dir: $MISE_ENV_CACHE_DIR"
+  if command -v fd >/dev/null 2>&1; then
+    env_cache_files="$(fd . "$MISE_ENV_CACHE_DIR" | wc -l | tr -d ' ')"
+  else
+    env_cache_files="$(find "$MISE_ENV_CACHE_DIR" -type f | wc -l | tr -d ' ')"
+  fi
+  echo "env-cache-files: ${env_cache_files}"
+  ls -lt "$MISE_ENV_CACHE_DIR" | head -3
+else
+  echo "env-cache-dir: missing ($MISE_ENV_CACHE_DIR)"
+fi
+echo ""
+
+echo "=== sive cache state ==="
+SIVE_STATE_DIR="$HOME/.local/state/sive"
+if [[ -d "$SIVE_STATE_DIR" ]]; then
+  echo "present: $SIVE_STATE_DIR"
+  if command -v fd >/dev/null 2>&1; then
+    fd . "$SIVE_STATE_DIR"
+  else
+    find "$SIVE_STATE_DIR" -type f
+  fi
+else
+  echo "missing: $SIVE_STATE_DIR (no sive state cache yet)"
+fi
+echo ""
+
+echo "=== vault folder state ==="
+SIVE_BW_PASSWORD="$(security find-generic-password -s sive/personal -a master_password -w 2>/dev/null || true)"
+SESSION=""
+if [[ -n "$SIVE_BW_PASSWORD" ]]; then
+  SESSION="$(SIVE_BW_PASSWORD="$SIVE_BW_PASSWORD" bw --nointeraction unlock --passwordenv SIVE_BW_PASSWORD --raw 2>/dev/null || true)"
+fi
+if [[ -n "$SESSION" ]]; then
+  python3 - <<'PY' "$SESSION"
+import json
+import subprocess
+import sys
+
+session = sys.argv[1]
+
+def run_bw(*args):
+    result = subprocess.run(
+        ["bw", "--nointeraction", *args, "--session", session],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout
+
+folders = json.loads(run_bw("list", "folders"))
+print("folders:", ", ".join(folder.get("name", "") for folder in folders))
+folder_by_name = {folder.get("name"): folder for folder in folders}
+
+def print_folder_state(name: str, *, names: bool = False) -> None:
+    folder = folder_by_name.get(name)
+    if not folder:
+        print(f"{name}: missing")
+        return
+    items = json.loads(run_bw("list", "items", "--folderid", folder["id"]))
+    print(f"{name}: item-count={len(items)}")
+    if names:
+        print(f"{name}: item-names={', '.join(item.get('name', '') for item in items) or '(none)'}")
+
+print_folder_state("env/global")
+print_folder_state("env/sandbox", names=True)
+PY
+else
+  echo "vault state unavailable (unlock failed or keychain entry missing)"
+fi
+echo ""
+
+echo "=== journal tail ==="
+if [[ -f JOURNAL.md ]]; then
+  tail -50 JOURNAL.md
+else
+  echo "missing: JOURNAL.md"
+fi
+echo ""
+
+echo "=== tests ==="
+pytest_output=""
+pytest_status=0
+if pytest_output="$(uv run pytest --tb=no -q 2>&1)"; then
+  pytest_status=0
+else
+  pytest_status=$?
+fi
+printf '%s\n' "$pytest_output" | tail -5
+if [[ $pytest_status -ne 0 ]]; then
+  echo "(tests failed: exit $pytest_status)"
+fi
