@@ -87,8 +87,13 @@ STRIPE_API_KEY=vault://personal:env/project-x/STRIPE_API_KEY
 ### Install
 
 ```bash
-# Clone and install with uv
-git clone <repo>
+brew install PeachlifeAB/tap/sive
+```
+
+Or install from source with uv:
+
+```bash
+git clone git@github.com:PeachlifeAB/sive.git
 cd sive
 uv sync
 ```
@@ -136,7 +141,6 @@ The internal `sive _mise-env` command is called by the mise hook. It reads the l
 Related docs:
 - [Command contracts](docs/COMMAND-CONTRACTS.md)
 - [User stories](docs/USER-STORIES.md)
-- [Active UX plan](plans/SIVE-UX-AND-DOT-SIVE-PLAN.md)
 
 ---
 
@@ -195,18 +199,21 @@ sive/
 │   ├── cli.py                 # Entry point
 │   ├── commands/
 │   │   ├── setup.py           # sive setup
+│   │   ├── refresh.py         # sive refresh
+│   │   ├── set_secret.py      # sive set KEY [value]
 │   │   ├── status.py          # sive status
 │   │   └── mise_env.py        # sive _mise-env (called by hook)
 │   └── core/
 │       ├── bw.py              # bw CLI wrapper (Bitwarden/Vaultwarden)
 │       ├── keychain_macos.py  # macOS Keychain via security(1)
+│       ├── project_config.py  # .sive project file read/write
+│       ├── snapshot.py        # Encrypted snapshot read/write
+│       ├── snapshot_crypto.py # AES-256-GCM encryption primitives
 │       ├── source_loader.py   # Resolves source strings to env dicts
+│       ├── sync_state.py      # Background sync state and locking
+│       ├── ui.py              # gum-based TUI with plain fallback
 │       └── vaults.py          # Reads ~/.config/sive/vaults.toml
 └── tests/
-    ├── test_keychain_macos.py
-    ├── test_mise_env_contract.py
-    ├── test_source_loader.py
-    └── test_version.py
 ```
 
 ---
