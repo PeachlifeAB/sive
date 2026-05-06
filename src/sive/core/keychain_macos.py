@@ -87,3 +87,17 @@ def get_password(vault_name: str) -> str:
 def delete_password(vault_name: str) -> None:
     """Remove master password from Keychain (best-effort)."""
     delete_secret(vault_name, _MASTER_PASSWORD_ACCOUNT)
+
+
+_EMAIL_ACCOUNT = "email"
+
+
+def store_email(vault_name: str, email: str) -> None:
+    store_secret(vault_name, _EMAIL_ACCOUNT, email)
+
+
+def get_email(vault_name: str) -> str | None:
+    try:
+        return get_secret(vault_name, _EMAIL_ACCOUNT)
+    except KeychainError:
+        return None

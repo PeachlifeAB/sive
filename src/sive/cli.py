@@ -47,7 +47,9 @@ def _print_top_level_help() -> None:
         "  --version   show program's version number and exit\n\n"
         "Examples:\n"
         "  sive setup\n"
-        "  sive set OPENAI_API_KEY sk-123"
+        "  sive setup --tag work --tag personal\n"
+        "  sive set OPENAI_API_KEY sk-123\n"
+        "  sive set OPENAI_API_KEY sk-123 --tag work"
     )
 
 
@@ -60,7 +62,11 @@ def _main() -> None:
         prog="sive",
         description="Make secrets available automatically for the current project.",
         epilog=(
-            "Examples:\n  sive setup\n  sive set OPENAI_API_KEY sk-123"
+            "Examples:\n"
+            "  sive setup\n"
+            "  sive setup --tag work --tag personal\n"
+            "  sive set OPENAI_API_KEY sk-123\n"
+            "  sive set OPENAI_API_KEY sk-123 --tag work"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

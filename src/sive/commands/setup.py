@@ -9,7 +9,8 @@ from pathlib import Path
 
 from ..core import ui
 from ..core.bw import BWError, get_status, list_env_tags, set_server, unlock
-from ..core.keychain_macos import KeychainError, store_password
+from ..core.keychain_macos import KeychainError, store_email, store_password
+from ..core.keychain_macos import get_email as get_stored_email
 from ..core.keychain_macos import get_password as get_stored_password
 from ..core.project_config import write_project_config
 from ..core.sync_state import load_known_tags
@@ -142,10 +143,11 @@ def _run_login() -> tuple[int, str | None, str | None]:
 
     try:
         store_password(vault_name, master_password)
+        store_email(vault_name, email)
     except KeychainError as e:
-        print(f"  Failed to store master password: {e}", file=sys.stderr)
+        print(f"  Failed to store credentials in Keychain: {e}", file=sys.stderr)
         return 1, None, None
-    print("  Master password stored in Keychain.")
+    print("  Credentials stored in Keychain.")
 
     from ..core.snapshot_crypto import ensure_key
 
@@ -248,11 +250,76 @@ def _unlock_vault(vault_name: str) -> tuple[str, str] | None:
         return None
 
 
+def run_relogin(vault_name: str = "personal") -> tuple[int, str | None, str | None]:
+    """Re-authenticate an already-configured vault. Returns (exit_code, session_key, appdata_dir)."""
+    try:
+        vault = load_vault(vault_name)
+    except ConfigError as e:
+        print(f"sive: {e}", file=sys.stderr)
+        return 1, None, None
+
+    appdata_dir = str(vault.appdata_dir)
+    status = _get_status_or_empty(appdata_dir)
+
+    try:
+        set_server(vault.server, status=status, appdata_dir=appdata_dir)
+    except BWError as e:
+        print(f"sive: {e}", file=sys.stderr)
+        return 1, None, None
+
+    bw_status = status.get("status", "unauthenticated")
+    bw_email = status.get("userEmail", "")
+
+    print("Vault session expired. Please log in again.")
+    stored_email = get_stored_email(vault_name)
+    email = stored_email or bw_email
+    if not email:
+        email = ui.input("Email")
+    else:
+        print(f"  Email: {email}")
+    master_password = ui.password("Master password")
+
+    if bw_status in ("locked", "unlocked"):
+        if bw_email.lower() != email.lower():
+            print(
+                f"sive: already logged in as {bw_email}. Run "
+                f"'BITWARDENCLI_APPDATA_DIR={appdata_dir} bw logout' to switch.",
+                file=sys.stderr,
+            )
+            return 1, None, None
+    else:
+        env = {**os.environ, "SIVE_BW_PASSWORD": master_password, "BITWARDENCLI_APPDATA_DIR": appdata_dir}
+        rc = ui.spin("Logging in...", lambda: subprocess.run(
+            ["bw", "login", email, "--passwordenv", "SIVE_BW_PASSWORD"],
+            env=env, capture_output=True,
+        ).returncode)
+        if rc != 0:
+            print("sive: login failed.", file=sys.stderr)
+            return 1, None, None
+
+    try:
+        session_key = ui.spin("Unlocking...", lambda: unlock(master_password, appdata_dir=appdata_dir))
+    except BWError as e:
+        print(f"sive: unlock failed: {e}", file=sys.stderr)
+        return 1, None, None
+
+    try:
+        store_password(vault_name, master_password)
+        store_email(vault_name, email)
+    except KeychainError as e:
+        print(f"sive: failed to store credentials in Keychain: {e}", file=sys.stderr)
+        return 1, None, None
+
+    print("  Logged in and keychain updated.")
+    return 0, session_key, appdata_dir
+
+
 def _bootstrap_ready() -> bool:
     try:
-        load_vault("personal")
+        vault = load_vault("personal")
         get_stored_password("personal")
-        return True
+        status = _get_status_or_empty(str(vault.appdata_dir))
+        return status.get("status") in ("locked", "unlocked")
     except (ConfigError, KeychainError):
         return False
 

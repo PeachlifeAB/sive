@@ -17,13 +17,7 @@ def run(key: str, value: str, tag: str | None = None, vault_name: str = "persona
         vault_name = read_project_vault()
     if tag is None:
         project_tags = read_project_tags()
-        if not project_tags:
-            print(
-                "sive: no .sive project config found — run 'sive setup' or use --tag",
-                file=sys.stderr,
-            )
-            return 1
-        tag = project_tags[-1]
+        tag = project_tags[-1] if project_tags else "global"
 
     folder_path = f"env/{tag}"
     source = f"{vault_name}.folder:env/{tag}"
@@ -39,8 +33,13 @@ def run(key: str, value: str, tag: str | None = None, vault_name: str = "persona
     try:
         session = _ensure_session(vault_name, None, appdata_dir=appdata_dir)
     except SourceError as e:
-        print(f"sive: {e}", file=sys.stderr)
-        return 1
+        if "not logged in" not in str(e).lower():
+            print(f"sive: {e}", file=sys.stderr)
+            return 1
+        from ..commands.setup import run_relogin
+        rc, session, _ = run_relogin(vault_name)
+        if rc != 0 or not session:
+            return 1
 
     try:
         folders = list_folders(session, appdata_dir=appdata_dir)

@@ -109,7 +109,7 @@ On a new machine, `sive setup` will:
 1. Verify `bw` is installed and install it automatically if missing
 2. Prompt for your vault server URL (required — no default)
 3. Run `bw config server <url>` and `bw login`
-4. Prompt once for your master password and store it in macOS Keychain
+4. Prompt once for your email and master password and store them in macOS Keychain
 5. Validate silent unlock
 6. Install or repair hidden shell integration as needed
 7. Configure the current directory for the tags you select
