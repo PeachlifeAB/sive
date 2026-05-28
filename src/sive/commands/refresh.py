@@ -10,7 +10,8 @@ from ..core.project_config import active_tags
 from ..core.snapshot import write_snapshot
 from ..core.snapshot_crypto import KeychainError as CryptoKeychainError
 from ..core.snapshot_crypto import ensure_key
-from ..core.source_loader import SourceError, load_source
+from ..core.bw import BWError, sync
+from ..core.source_loader import SourceError, _ensure_session, load_source
 
 
 def run(vault_name: str = "personal", sources: list[str] | None = None) -> int:
@@ -27,6 +28,16 @@ def run(vault_name: str = "personal", sources: list[str] | None = None) -> int:
 
     t0 = time.monotonic()
     failed = 0
+
+    try:
+        from ..core.vaults import ConfigError, load_vault
+        vault = load_vault(vault_name)
+        session = _ensure_session(vault_name, None, appdata_dir=str(vault.appdata_dir))
+        sync(session, appdata_dir=str(vault.appdata_dir))
+        print(f"  synced vault '{vault_name}'")
+    except Exception as e:
+        print(f"sive: vault sync failed: {e}", file=sys.stderr)
+        return 1
 
     for source in sources:
         try:

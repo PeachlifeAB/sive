@@ -48,8 +48,8 @@ def _print_top_level_help() -> None:
         "Examples:\n"
         "  sive setup\n"
         "  sive setup --tag work --tag personal\n"
-        "  sive set OPENAI_API_KEY sk-123\n"
-        "  sive set OPENAI_API_KEY sk-123 --tag work"
+        "  sive set OPENAI_API_KEY\n"
+        "  sive set OPENAI_API_KEY --tag work"
     )
 
 
@@ -66,7 +66,8 @@ def _main() -> None:
             "  sive setup\n"
             "  sive setup --tag work --tag personal\n"
             "  sive set OPENAI_API_KEY sk-123\n"
-            "  sive set OPENAI_API_KEY sk-123 --tag work"
+            "  sive set OPENAI_API_KEY sk-123 --tag work\n"
+            "  echo 'my$ecret&value' | sive set MY_KEY --stdin"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -116,9 +117,6 @@ def _main() -> None:
     set_parser = subparsers.add_parser("set", help="Write a secret to a tag folder")
     set_parser.add_argument("key", help="Variable name (e.g. MY_API_KEY)")
     set_parser.add_argument(
-        "value", nargs="?", default=None, help="Secret value (prompted if omitted)"
-    )
-    set_parser.add_argument(
         "--tag",
         default=None,
         help="Override the target tag (default: most-specific active tag)",
@@ -153,8 +151,12 @@ def _main() -> None:
     elif args.command == "set":
         from .commands.set_secret import run
 
-        value = args.value
-        if value is None:
+        if not sys.stdin.isatty():
+            value = sys.stdin.read().strip()
+            if not value:
+                print("sive: stdin is empty", file=sys.stderr)
+                sys.exit(1)
+        else:
             try:
                 from .core import ui
                 value = ui.password(f"Value for {args.key}")
