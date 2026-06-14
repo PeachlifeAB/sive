@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .bw import sync, unlock
 from .keychain_macos import get_password
+from .pending_queue import drain_pending
 from .vaults import load_vault
 
 STATE_DIR = Path.home() / ".local" / "state" / "sive"
@@ -137,6 +138,7 @@ def run_sync_vault(vault_name: str) -> int:
             password = get_password(vault_name)
             session = unlock(password, appdata_dir=str(vault.appdata_dir))
             sync(session, appdata_dir=str(vault.appdata_dir))
+            drain_pending(vault_name, session, str(vault.appdata_dir))
             _write_snapshot_from_session(vault_name, session)
             _update_known_tags(vault_name, session, str(vault.appdata_dir), state)
             state["last_successful_sync_at"] = to_timestamp(utc_now())
