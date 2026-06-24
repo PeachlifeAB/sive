@@ -46,7 +46,16 @@ function PLUGIN:MiseEnv(ctx)
         table.insert(watch_files, snapshot_path(vault_name, "global"))
     end
 
-    local command = "sive _mise-env"
+    local path_ok, sive_path = pcall(cmd.exec, "command -v sive")
+    if not path_ok or type(sive_path) ~= "string" or sive_path:match("^%s*$") then
+        return {
+            cacheable   = false,
+            env         = env,
+            watch_files = watch_files,
+        }
+    end
+
+    local command = sive_path:gsub("%s+$", "") .. " _mise-env"
     for _, tag in ipairs(valid_tags) do
         command = command .. " --tag " .. tag
     end

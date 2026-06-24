@@ -135,7 +135,9 @@ def _run_login() -> tuple[int, str | None, str | None]:
         return 0, None, None
 
     try:
-        session_key = ui.spin("Validating unlock...", lambda: unlock(master_password, appdata_dir=appdata_dir))
+        session_key = ui.spin(
+            "Validating unlock...", lambda: unlock(master_password, appdata_dir=appdata_dir)
+        )
     except BWError as e:
         print(f"  Unlock failed: {e}", file=sys.stderr)
         print("  Master password NOT stored. Re-run 'sive setup' to retry.")
@@ -181,6 +183,7 @@ def run_project_setup(tags: list[str] | None = None, no_global: bool = False) ->
     if tags is None:
         available = load_known_tags("personal")
         if not available:
+
             def _fetch() -> list[str]:
                 try:
                     # login_session is None when the user skipped keychain storage during
@@ -194,6 +197,7 @@ def run_project_setup(tags: list[str] | None = None, no_global: bool = False) ->
                 except Exception as e:
                     print(f"\n  Warning: could not load tags from vault ({e})", file=sys.stderr)
                     return []
+
             available = ui.spin("Loading tags from vault...", _fetch)
         if available:
             tags = ui.choose("Select project tags", available)
@@ -251,7 +255,10 @@ def _unlock_vault(vault_name: str) -> tuple[str, str] | None:
 
 
 def run_relogin(vault_name: str = "personal") -> tuple[int, str | None, str | None]:
-    """Re-authenticate an already-configured vault. Returns (exit_code, session_key, appdata_dir)."""
+    """Re-authenticate a configured vault.
+
+    Returns (exit_code, session_key, appdata_dir).
+    """
     try:
         vault = load_vault(vault_name)
     except ConfigError as e:
@@ -288,17 +295,29 @@ def run_relogin(vault_name: str = "personal") -> tuple[int, str | None, str | No
             )
             return 1, None, None
     else:
-        env = {**os.environ, "SIVE_BW_PASSWORD": master_password, "BITWARDENCLI_APPDATA_DIR": appdata_dir}
-        rc = ui.spin("Logging in...", lambda: subprocess.run(
-            ["bw", "login", email, "--passwordenv", "SIVE_BW_PASSWORD"],
-            env=env, capture_output=True,
-        ).returncode)
+        env = {
+            **os.environ,
+            "SIVE_BW_PASSWORD": master_password,
+            "BITWARDENCLI_APPDATA_DIR": appdata_dir,
+        }
+        rc = ui.spin(
+            "Logging in...",
+            lambda: (
+                subprocess.run(
+                    ["bw", "login", email, "--passwordenv", "SIVE_BW_PASSWORD"],
+                    env=env,
+                    capture_output=True,
+                ).returncode
+            ),
+        )
         if rc != 0:
             print("sive: login failed.", file=sys.stderr)
             return 1, None, None
 
     try:
-        session_key = ui.spin("Unlocking...", lambda: unlock(master_password, appdata_dir=appdata_dir))
+        session_key = ui.spin(
+            "Unlocking...", lambda: unlock(master_password, appdata_dir=appdata_dir)
+        )
     except BWError as e:
         print(f"sive: unlock failed: {e}", file=sys.stderr)
         return 1, None, None

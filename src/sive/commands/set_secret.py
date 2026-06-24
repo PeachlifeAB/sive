@@ -62,6 +62,7 @@ def run(key: str, value: str, tag: str | None = None, vault_name: str = "persona
             print(f"sive: {e}", file=sys.stderr)
             return 1
         from ..commands.setup import run_relogin
+
         rc, session, _ = run_relogin(vault_name)
         if rc != 0 or not session:
             return 1

@@ -5,12 +5,12 @@ from __future__ import annotations
 import sys
 import time
 
+from ..core.bw import sync
 from ..core.keychain_macos import KeychainError
 from ..core.project_config import active_tags
 from ..core.snapshot import write_snapshot
 from ..core.snapshot_crypto import KeychainError as CryptoKeychainError
 from ..core.snapshot_crypto import ensure_key
-from ..core.bw import BWError, sync
 from ..core.source_loader import SourceError, _ensure_session, load_source
 
 
@@ -30,7 +30,8 @@ def run(vault_name: str = "personal", sources: list[str] | None = None) -> int:
     failed = 0
 
     try:
-        from ..core.vaults import ConfigError, load_vault
+        from ..core.vaults import load_vault
+
         vault = load_vault(vault_name)
         session = _ensure_session(vault_name, None, appdata_dir=str(vault.appdata_dir))
         sync(session, appdata_dir=str(vault.appdata_dir))

@@ -7,8 +7,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-from pathlib import Path
-
 from .bw import find_folder_id, list_folders, upsert_note
 
 STATE_DIR = Path.home() / ".local" / "state" / "sive"

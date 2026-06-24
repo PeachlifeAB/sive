@@ -160,6 +160,7 @@ def _update_known_tags(vault_name: str, session: str, appdata_dir: str, state: d
     import logging
 
     from .bw import list_env_tags
+
     try:
         state["known_tags"] = list_env_tags(session, appdata_dir=appdata_dir)
     except Exception as e:

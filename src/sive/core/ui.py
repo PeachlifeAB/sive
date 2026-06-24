@@ -5,15 +5,16 @@ from __future__ import annotations
 import builtins
 import getpass as _getpass
 import subprocess
-import sys
 import threading
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 _T = TypeVar("_T")
 
 
-
-def style(text: str, *, bold: bool = False, foreground: str = "", background: str = "", padding: str = "") -> None:
+def style(
+    text: str, *, bold: bool = False, foreground: str = "", background: str = "", padding: str = ""
+) -> None:
     """Print styled text via gum style; falls back to plain print."""
     try:
         args = ["style"]
@@ -130,13 +131,19 @@ def choose(header: str, options: list[str], *, selected: list[str] | None = None
         return []
     try:
         args = [
-            "gum", "choose",
+            "gum",
+            "choose",
             "--no-limit",
-            "--header", header,
-            "--cursor", "> ",
-            "--cursor-prefix", "[ ] ",
-            "--selected-prefix", "[✓] ",
-            "--unselected-prefix", "[ ] ",
+            "--header",
+            header,
+            "--cursor",
+            "> ",
+            "--cursor-prefix",
+            "[ ] ",
+            "--selected-prefix",
+            "[✓] ",
+            "--unselected-prefix",
+            "[ ] ",
         ]
         if selected:
             args += ["--selected", ",".join(selected)]

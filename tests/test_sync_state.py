@@ -59,9 +59,15 @@ def test_run_sync_vault_drains_pending_queue_on_success(tmp_path):
     with (
         patch.object(sync_state, "STATE_DIR", tmp_path),
         patch.object(sync_state, "utc_now", side_effect=[now, now]),
-        patch.object(sync_state, "load_vault", return_value=VaultConfig(
-            name="personal", server="https://vw.example.com", appdata_dir=Path("/tmp/sive-personal"),
-        )),
+        patch.object(
+            sync_state,
+            "load_vault",
+            return_value=VaultConfig(
+                name="personal",
+                server="https://vw.example.com",
+                appdata_dir=Path("/tmp/sive-personal"),
+            ),
+        ),
         patch.object(sync_state, "get_password", return_value="secret"),
         patch.object(sync_state, "unlock", return_value="session"),
         patch.object(sync_state, "sync"),

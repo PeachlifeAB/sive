@@ -13,11 +13,29 @@ def _version_string() -> str:
     try:
         import os
 
+        package_dir = os.path.dirname(os.path.abspath(__file__))
+        repo_result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            cwd=package_dir,
+        )
+        if repo_result.returncode != 0:
+            return f"sive {__version__}"
+
+        repo_root = repo_result.stdout.strip()
+        pyproject_path = os.path.join(repo_root, "pyproject.toml")
+        if not os.path.exists(pyproject_path):
+            return f"sive {__version__}"
+        with open(pyproject_path, encoding="utf-8") as f:
+            if 'name = "sive"' not in f.read():
+                return f"sive {__version__}"
+
         result = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
             capture_output=True,
             text=True,
-            cwd=os.path.dirname(os.path.abspath(__file__)),
+            cwd=repo_root,
         )
         if result.returncode == 0:
             short_hash = result.stdout.strip()
@@ -41,7 +59,8 @@ def _print_top_level_help() -> None:
         "Make secrets available automatically for the current project.\n\n"
         "commands:\n"
         "  setup     Configure current project directory\n"
-        "  set       Write a secret to a tag folder\n\n"
+        "  set       Write a secret to a tag folder\n"
+        "  refresh   Sync local encrypted snapshots from the vault\n\n"
         "options:\n"
         "  -h, --help  show this help message and exit\n"
         "  --version   show program's version number and exit\n\n"
@@ -49,7 +68,8 @@ def _print_top_level_help() -> None:
         "  sive setup\n"
         "  sive setup --tag work --tag personal\n"
         "  sive set OPENAI_API_KEY\n"
-        "  sive set OPENAI_API_KEY --tag work"
+        "  sive set OPENAI_API_KEY --tag work\n"
+        "  sive refresh"
     )
 
 
@@ -65,9 +85,10 @@ def _main() -> None:
             "Examples:\n"
             "  sive setup\n"
             "  sive setup --tag work --tag personal\n"
-            "  sive set OPENAI_API_KEY sk-123\n"
-            "  sive set OPENAI_API_KEY sk-123 --tag work\n"
-            "  echo 'my$ecret&value' | sive set MY_KEY --stdin"
+            "  sive set OPENAI_API_KEY\n"
+            "  sive set OPENAI_API_KEY --tag work\n"
+            "  printf %s 'my$ecret&value' | sive set MY_KEY\n"
+            "  sive refresh"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -105,7 +126,9 @@ def _main() -> None:
         help="Tag name, e.g. global",
     )
     # sive refresh
-    refresh_parser = subparsers.add_parser("refresh", help=argparse.SUPPRESS)
+    refresh_parser = subparsers.add_parser(
+        "refresh", help="Sync local encrypted snapshots from the vault"
+    )
     refresh_parser.add_argument(
         "--vault", default="personal", help="Vault name (default: personal)"
     )
@@ -159,6 +182,7 @@ def _main() -> None:
         else:
             try:
                 from .core import ui
+
                 value = ui.password(f"Value for {args.key}")
             except EOFError:
                 print("No input received, aborting.", file=sys.stderr)
