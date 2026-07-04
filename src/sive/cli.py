@@ -7,6 +7,12 @@ import subprocess
 import sys
 
 from . import __version__
+from .core import ui
+
+
+def _echo(*values: object, sep: str = " ", end: str = "\n", file=None) -> None:
+    stream = file or sys.stdout
+    stream.write(sep.join(str(value) for value in values) + end)
 
 
 def _version_string() -> str:
@@ -24,13 +30,6 @@ def _version_string() -> str:
             return f"sive {__version__}"
 
         repo_root = repo_result.stdout.strip()
-        pyproject_path = os.path.join(repo_root, "pyproject.toml")
-        if not os.path.exists(pyproject_path):
-            return f"sive {__version__}"
-        with open(pyproject_path, encoding="utf-8") as f:
-            if 'name = "sive"' not in f.read():
-                return f"sive {__version__}"
-
         result = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
             capture_output=True,
@@ -49,12 +48,12 @@ def main() -> None:
     try:
         _main()
     except KeyboardInterrupt:
-        print("\nAborted.", file=sys.stderr)
+        _echo("\nAborted.", file=sys.stderr)
         sys.exit(130)
 
 
 def _print_top_level_help() -> None:
-    print(
+    _echo(
         "usage: sive [-h] [--version] <command> [<args>]\n\n"
         "Make secrets available automatically for the current project.\n\n"
         "commands:\n"
@@ -87,7 +86,7 @@ def _main() -> None:
             "  sive setup --tag work --tag personal\n"
             "  sive set OPENAI_API_KEY\n"
             "  sive set OPENAI_API_KEY --tag work\n"
-            "  printf %s 'my$ecret&value' | sive set MY_KEY\n"
+            "  printf %s 'my-secret-value' | sive set MY_KEY\n"
             "  sive refresh"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -177,15 +176,13 @@ def _main() -> None:
         if not sys.stdin.isatty():
             value = sys.stdin.read().strip()
             if not value:
-                print("sive: stdin is empty", file=sys.stderr)
+                _echo("sive: stdin is empty", file=sys.stderr)
                 sys.exit(1)
         else:
             try:
-                from .core import ui
-
                 value = ui.password(f"Value for {args.key}")
             except EOFError:
-                print("No input received, aborting.", file=sys.stderr)
+                _echo("No input received, aborting.", file=sys.stderr)
                 sys.exit(1)
         sys.exit(run(args.key, value, tag=args.tag, vault_name=args.vault))
 

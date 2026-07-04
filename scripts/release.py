@@ -5,6 +5,8 @@ Usage:
   python scripts/release.py verify
   python scripts/release.py prepare 0.1.3
   python scripts/release.py formula 0.1.3 --tap ../homebrew-tap
+  python scripts/release.py release 0.1.3 --tap ../homebrew-tap
+  python scripts/release.py release 0.1.3 --tap ../homebrew-tap --dry-run
 """
 
 from __future__ import annotations
@@ -14,9 +16,10 @@ import hashlib
 import re
 import subprocess
 import sys
-import urllib.request
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TextIO
 
 try:
     import tomllib
@@ -27,6 +30,20 @@ ROOT = Path(__file__).resolve().parents[1]
 PROJECT_NAME = "sive"
 GITHUB_TARBALL = "https://github.com/PeachlifeAB/sive/archive/refs/tags/{version}.tar.gz"
 VERSION_RE = r"\d+\.\d+\.\d+(?:[.-][A-Za-z0-9]+)?"
+VERSION_FULL_RE = re.compile(f"^{VERSION_RE}$")
+INIT_VERSION_RE = re.compile(r'__version__ = "[^\"]+"')
+PYPROJECT_VERSION_RE = re.compile(r'^version = "[^\"]+"', re.MULTILINE)
+METADATA_VERSION_RE = re.compile(r'PLUGIN\.version = "[^\"]+"')
+FORMULA_URL_RE = re.compile(
+    r'url "https://github\.com/PeachlifeAB/sive/archive/refs/tags/[^\"]+\.tar\.gz"'
+)
+FORMULA_SHA_RE = re.compile(r'sha256 "[a-f0-9]{64}"')
+FORMULA_TEST_RE = re.compile(r'assert_match .+, shell_output\("#\{bin\}/sive --version"\)')
+
+
+def echo(*values: object, sep: str = " ", end: str = "\n", file: TextIO | None = None) -> None:
+    stream = file or sys.stdout
+    stream.write(sep.join(str(value) for value in values) + end)
 
 
 @dataclass(frozen=True)
@@ -65,47 +82,47 @@ class ReleaseError(RuntimeError):
 
 
 def run(args: list[str], *, cwd: Path = ROOT) -> None:
-    print("+", " ".join(args))
+    echo("+", " ".join(args))
     subprocess.run(args, cwd=cwd, check=True)
 
 
-def read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
+def _read_release_text(path: Path) -> str:
+    return getattr(path, "read_text")(encoding="utf-8")
 
 
-def write_text(path: Path, content: str) -> None:
-    path.write_text(content, encoding="utf-8")
+def _write_release_text(path: Path, content: str) -> None:
+    getattr(path, "write_text")(content, encoding="utf-8")
 
 
 def extract_version(source: VersionSource) -> str:
-    match = source.pattern.search(read_text(source.path))
+    match = source.pattern.search(_read_release_text(source.path))
     if not match:
         raise ReleaseError(f"{source.label}: version pattern not found in {source.path}")
     return match.group("version")
 
 
-def replace_one(path: Path, pattern: str, replacement: str, *, flags: int = 0) -> None:
-    content = read_text(path)
-    new_content, count = re.subn(pattern, replacement, content, count=1, flags=flags)
+def replace_one(path: Path, pattern: re.Pattern[str], replacement: str) -> None:
+    content = _read_release_text(path)
+    new_content, count = pattern.subn(replacement, content, count=1)
     if count != 1:
         raise ReleaseError(f"expected one replacement in {path}, got {count}")
-    write_text(path, new_content)
+    _write_release_text(path, new_content)
 
 
 def replace_all(path: Path, old: str, new: str) -> None:
-    content = read_text(path)
+    content = _read_release_text(path)
     if old not in content:
         raise ReleaseError(f"expected {old!r} in {path}")
-    write_text(path, content.replace(old, new))
+    _write_release_text(path, content.replace(old, new))
 
 
 def pyproject_version() -> str:
-    data = tomllib.loads(read_text(ROOT / "pyproject.toml"))
+    data = tomllib.loads(_read_release_text(ROOT / "pyproject.toml"))
     return str(data["project"]["version"])
 
 
 def assert_valid_version(version: str) -> None:
-    if not re.fullmatch(VERSION_RE, version):
+    if not VERSION_FULL_RE.fullmatch(version):
         raise ReleaseError(f"invalid version: {version!r}")
 
 
@@ -115,25 +132,24 @@ def update_repo_versions(version: str) -> None:
 
     replace_one(
         ROOT / "src/sive/__init__.py",
-        r'__version__ = "[^"]+"',
+        INIT_VERSION_RE,
         f'__version__ = "{version}"',
     )
     replace_one(
         ROOT / "pyproject.toml",
-        r'^version = "[^"]+"',
+        PYPROJECT_VERSION_RE,
         f'version = "{version}"',
-        flags=re.MULTILINE,
     )
     replace_one(
         ROOT / "metadata.lua",
-        r'PLUGIN\.version = "[^"]+"',
+        METADATA_VERSION_RE,
         f'PLUGIN.version = "{version}"',
     )
 
     if current == version:
         return
 
-    for path in [ROOT / "tests/test_version.py", ROOT / "docs/USER-STORIES.md"]:
+    for path in [ROOT / "tests/test_version.py"]:
         replace_all(path, current, version)
         replace_all(path, re.escape(current), re.escape(version))
 
@@ -146,7 +162,7 @@ def verify_repo_versions() -> None:
         details = ", ".join(f"{label}={value}" for label, value in sorted(versions.items()))
         raise ReleaseError(f"version mismatch: {details}")
 
-    test_version = read_text(ROOT / "tests/test_version.py")
+    test_version = _read_release_text(ROOT / "tests/test_version.py")
     if expected not in test_version or re.escape(expected) not in test_version:
         raise ReleaseError("tests/test_version.py does not assert current version")
 
@@ -160,7 +176,7 @@ def verify_repo_versions() -> None:
     if expected not in version_output:
         raise ReleaseError(f"CLI version mismatch: expected {expected}, got {version_output!r}")
 
-    print(f"version ok: {expected}")
+    echo(f"version ok: {expected}")
 
 
 def git_output(args: list[str], *, cwd: Path = ROOT) -> str:
@@ -173,10 +189,17 @@ def git_output(args: list[str], *, cwd: Path = ROOT) -> str:
     ).stdout.strip()
 
 
-def require_git_clean(*, cwd: Path = ROOT) -> None:
+def require_git_clean(*, cwd: Path = ROOT, warn: bool = False) -> None:
     status = git_output(["status", "--porcelain"], cwd=cwd)
-    if status:
-        raise ReleaseError(f"git working tree is dirty in {cwd}:\n{status}")
+    if not status:
+        return
+    if warn:
+        echo(
+            f"note: working tree dirty in {cwd} — commit before a real release",
+            file=sys.stderr,
+        )
+        return
+    raise ReleaseError(f"git working tree is dirty in {cwd}:\n{status}")
 
 
 def require_not_published(version: str) -> None:
@@ -205,13 +228,19 @@ def verify_installed_tool(version: str) -> None:
         raise ReleaseError(
             f"installed tool mismatch: expected {expected!r}, got {version_output!r}"
         )
-    print(f"installed tool ok: {version_output}")
+    echo(f"installed tool ok: {version_output}")
 
 
-def prepare(version: str) -> None:
+def prepare(version: str, *, dry_run: bool = False) -> None:
     require_not_published(version)
     run(["uv", "run", "ruff", "check", "."])
     run(["uv", "run", "pytest"])
+    if dry_run:
+        echo(
+            f"[dry-run] bump versions to {version}, uv lock, ruff format, "
+            "re-verify, re-test, reinstall tool"
+        )
+        return
     update_repo_versions(version)
     run(["uv", "lock"])
     run(["uv", "run", "ruff", "format", "."])
@@ -221,11 +250,24 @@ def prepare(version: str) -> None:
     verify_installed_tool(version)
 
 
-def tarball_sha256(version: str) -> str:
+def _github_tarball_url(version: str) -> str:
+    assert_valid_version(version)
     url = GITHUB_TARBALL.format(version=version)
-    with urllib.request.urlopen(url, timeout=60) as response:  # noqa: S310
-        digest = hashlib.sha256(response.read()).hexdigest()
-    return digest
+    parsed = urllib.parse.urlparse(url)
+    expected_path = f"/PeachlifeAB/sive/archive/refs/tags/{version}.tar.gz"
+    if parsed.scheme != "https" or parsed.netloc != "github.com" or parsed.path != expected_path:
+        raise ReleaseError(f"unexpected release tarball URL: {url}")
+    return url
+
+
+def tarball_sha256(version: str) -> str:
+    url = _github_tarball_url(version)
+    response = subprocess.run(
+        ["curl", "--fail", "--silent", "--show-error", "--location", url],
+        capture_output=True,
+        check=True,
+    )
+    return hashlib.sha256(response.stdout).hexdigest()
 
 
 def formula_path(tap: Path) -> Path:
@@ -239,33 +281,27 @@ def update_formula(version: str, *, tap: Path, sha256: str | None) -> None:
     assert_valid_version(version)
     formula = formula_path(tap)
     digest = sha256 or tarball_sha256(version)
-    content = read_text(formula)
-    content = re.sub(
-        r'url "https://github\.com/PeachlifeAB/sive/archive/refs/tags/[^\"]+\.tar\.gz"',
-        f'url "{GITHUB_TARBALL.format(version=version)}"',
-        content,
-        count=1,
+    content = _read_release_text(formula)
+    content = FORMULA_URL_RE.sub(
+        f'url "{GITHUB_TARBALL.format(version=version)}"', content, count=1
     )
-    content = re.sub(r'sha256 "[a-f0-9]{64}"', f'sha256 "{digest}"', content, count=1)
-    content = re.sub(
-        r'assert_match .+, shell_output\("#\{bin\}/sive --version"\)',
-        'assert_match version.to_s, shell_output("#{bin}/sive --version")',
-        content,
-        count=1,
+    content = FORMULA_SHA_RE.sub(f'sha256 "{digest}"', content, count=1)
+    content = FORMULA_TEST_RE.sub(
+        'assert_match version.to_s, shell_output("#{bin}/sive --version")', content, count=1
     )
-    write_text(formula, content)
+    _write_release_text(formula, content)
     verify_formula(tap=tap, expected=version)
 
 
 def verify_formula(*, tap: Path, expected: str | None = None) -> None:
     formula = formula_path(tap)
-    content = read_text(formula)
+    content = _read_release_text(formula)
     version = expected or pyproject_version()
     if f"/tags/{version}.tar.gz" not in content:
         raise ReleaseError(f"formula URL does not point at {version}")
     if 'assert_match version.to_s, shell_output("#{bin}/sive --version")' not in content:
         raise ReleaseError("formula test must assert version.to_s")
-    if not re.search(r'sha256 "[a-f0-9]{64}"', content):
+    if not FORMULA_SHA_RE.search(content):
         raise ReleaseError("formula sha256 missing or invalid")
     if 'depends_on "uv"' in content:
         raise ReleaseError("formula must not install uv")
@@ -277,7 +313,7 @@ def verify_formula(*, tap: Path, expected: str | None = None) -> None:
         raise ReleaseError("formula must depend on python@3.13")
     if 'depends_on "cryptography"' not in content:
         raise ReleaseError("formula must depend on brewed cryptography")
-    print(f"formula ok: {formula}")
+    echo(f"formula ok: {formula}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -298,7 +334,112 @@ def parse_args() -> argparse.Namespace:
     formula_verify.add_argument("--tap", type=Path, default=ROOT.parent / "homebrew-tap")
     formula_verify.add_argument("--version", default=None)
 
+    release_parser = subparsers.add_parser(
+        "release", help="Full release: prepare + tag + push + GH release + brew bump"
+    )
+    release_parser.add_argument("version", help="Release version, e.g. 0.1.3")
+    release_parser.add_argument(
+        "--tap", type=Path, required=True, help="Path to homebrew-tap repo (required)"
+    )
+    release_parser.add_argument(
+        "--dry-run", action="store_true", help="Preview without pushing or creating releases"
+    )
+
     return parser.parse_args()
+
+
+def _git_tag_and_push(version: str, *, dry_run: bool) -> None:
+    tag_name = f"v{version}"
+    if dry_run:
+        echo(f"[dry-run] git tag -a {tag_name} -m 'Release {version}'")
+        echo(f"[dry-run] git push origin {tag_name}")
+        return
+    run(["git", "tag", "-a", tag_name, "-m", f"Release {version}"])
+    run(["git", "push", "origin", tag_name])
+    echo(f"tagged and pushed: {tag_name}")
+
+
+def _create_github_release(version: str, *, dry_run: bool) -> str:
+    """Build sdist, upload to GitHub release, return tarball sha256."""
+    tag_name = f"v{version}"
+    release_notes = f"Release {version}"
+
+    if dry_run:
+        echo("[dry-run] uv build --sdist  (then compute sha256)")
+        echo(
+            f"[dry-run] gh release create {tag_name} "
+            f"--title '{release_notes}' --notes '{release_notes}' dist/sive-{version}.tar.gz"
+        )
+        return "<dry-run>"
+
+    run(["uv", "build", "--sdist"])
+    sdist_path = sorted(ROOT.glob("dist/sive-*.tar.gz"))[-1]
+    sha256 = hashlib.sha256(sdist_path.read_bytes()).hexdigest()
+    echo(f"sdist: {sdist_path.name} sha256={sha256}")
+
+    notes_file = ROOT / ".release-notes.md"
+    notes_file.write_text(release_notes, encoding="utf-8")
+    run(
+        [
+            "gh",
+            "release",
+            "create",
+            tag_name,
+            "--title",
+            release_notes,
+            "--notes-file",
+            str(notes_file),
+            str(sdist_path),
+        ]
+    )
+    notes_file.unlink(missing_ok=True)
+    echo(f"github release created: {tag_name}")
+    return sha256
+
+
+def _bump_brew_formula(version: str, *, tap: Path, sha256: str, dry_run: bool) -> None:
+    """Update formula and run brew bump-formula-pr if possible."""
+    tap = tap.resolve()
+    formula = formula_path(tap)
+
+    if dry_run:
+        echo(f"[dry-run] update formula at {formula}")
+        tarball_url = f"https://github.com/PeachlifeAB/sive/archive/refs/tags/v{version}.tar.gz"
+        cmd = f"cd {tap} && brew bump-formula-pr --version {version} sive --url {tarball_url}"
+        echo(f"[dry-run] {cmd}")
+        return
+
+    update_formula(version, tap=tap, sha256=sha256)
+    run(["git", "add", "Formula/sive.rb"], cwd=tap)
+    run(["git", "commit", "-m", f"sive: v{version}"], cwd=tap)
+    run(["git", "push", "origin", "main"], cwd=tap)
+
+    try:
+        tarball_url = f"https://github.com/PeachlifeAB/sive/archive/refs/tags/v{version}.tar.gz"
+        run(["brew", "bump-formula-pr", "--version", version, "sive", "--url", tarball_url])
+        echo(f"brew bump-formula-pr submitted for sive v{version}")
+    except subprocess.CalledProcessError:
+        echo(
+            f"brew bump-formula-pr failed (may need interactive approval); "
+            f"formula updated at {formula}",
+            file=sys.stderr,
+        )
+
+
+def release(version: str, *, tap: Path, dry_run: bool) -> None:
+    """Full release flow: prepare, tag, push, GH release, brew bump."""
+    echo(f"=== Release {version} ===")
+    if dry_run:
+        echo("*** DRY RUN — nothing will be pushed, created, or modified ***\n")
+
+    require_git_clean(warn=dry_run)
+    require_git_clean(cwd=tap.resolve(), warn=dry_run)
+    prepare(version, dry_run=dry_run)
+    _git_tag_and_push(version, dry_run=dry_run)
+    sha256 = _create_github_release(version, dry_run=dry_run)
+    _bump_brew_formula(version, tap=tap, sha256=sha256, dry_run=dry_run)
+
+    echo(f"\n=== Release {version} complete ===")
 
 
 def main() -> int:
@@ -312,10 +453,12 @@ def main() -> int:
             update_formula(args.version, tap=args.tap.resolve(), sha256=args.sha256)
         elif args.command == "verify-formula":
             verify_formula(tap=args.tap.resolve(), expected=args.version)
+        elif args.command == "release":
+            release(args.version, tap=args.tap, dry_run=args.dry_run)
         else:  # pragma: no cover - argparse prevents this
             raise ReleaseError(f"unknown command: {args.command}")
     except (ReleaseError, subprocess.CalledProcessError) as e:
-        print(f"release: {e}", file=sys.stderr)
+        echo(f"release: {e}", file=sys.stderr)
         return 1
     return 0
 

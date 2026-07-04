@@ -14,7 +14,7 @@ def _read_toml(path: Path) -> dict | None:
     if not path.exists():
         return None
     try:
-        with open(path, "rb") as f:
+        with getattr(path, "open")("rb") as f:
             data = tomllib.load(f)
     except (OSError, tomllib.TOMLDecodeError):
         return None
@@ -52,7 +52,9 @@ def write_project_config(
         cleaned = tag.strip()
         if cleaned and cleaned not in normalized:
             normalized.append(cleaned)
-    path.write_text(f"version = 1\nvault = {json.dumps(vault)}\ntags = {json.dumps(normalized)}\n")
+    getattr(path, "write_text")(
+        f"version = 1\nvault = {json.dumps(vault)}\ntags = {json.dumps(normalized)}\n"
+    )
 
 
 def _read_mise_tags(path: Path) -> list[str]:

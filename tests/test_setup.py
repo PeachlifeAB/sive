@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,10 +9,8 @@ from sive.commands import setup
 def test_setup_skip_keychain_still_patches_mise_config(capsys):
     from sive.core.vaults import VaultConfig
 
-    version_result = subprocess.CompletedProcess(["bw", "--version"], 0, stdout="2026.2.0\n")
-
     with (
-        patch("sive.commands.setup.subprocess.run", return_value=version_result) as mock_run,
+        patch("sive.commands.setup.ensure_bw_cli", return_value=True) as mock_ensure_bw_cli,
         patch("sive.commands.setup.write_vault_stub") as mock_write_vault_stub,
         patch(
             "sive.commands.setup.load_vault",
@@ -55,7 +52,27 @@ def test_setup_skip_keychain_still_patches_mise_config(capsys):
         appdata_dir="/tmp/sive-personal",
     )
     mock_patch_mise_config.assert_called_once_with()
-    mock_run.assert_called_once_with(["bw", "--version"], capture_output=True, text=True)
+    mock_ensure_bw_cli.assert_called_once_with()
+
+
+def test_patch_mise_config_creates_only_sive_mise_hook_without_bw_tool(tmp_path):
+    config_dir = tmp_path / "mise"
+    config_file = config_dir / "config.toml"
+
+    with (
+        patch.object(setup, "MISE_CONFIG_DIR", config_dir),
+        patch.object(setup, "GLOBAL_MISE_CONFIG", config_file),
+        patch("sive.core.ui.ensure_homebrew_command", return_value=True),
+    ):
+        setup._patch_mise_config()
+
+    content = config_file.read_text()
+    assert "[settings]" in content
+    assert "env_cache = false" in content
+    assert "[env]" in content
+    assert setup.SIVE_MISE_DIRECTIVE in content
+    assert "[tools]" not in content
+    assert "bitwarden" not in content.lower()
 
 
 def test_patch_mise_config_conflict_guidance_includes_cache_settings(tmp_path, capsys):
@@ -67,6 +84,7 @@ def test_patch_mise_config_conflict_guidance_includes_cache_settings(tmp_path, c
     with (
         patch.object(setup, "MISE_CONFIG_DIR", config_dir),
         patch.object(setup, "GLOBAL_MISE_CONFIG", config_file),
+        patch("sive.core.ui.ensure_homebrew_command", return_value=True),
     ):
         setup._patch_mise_config()
 

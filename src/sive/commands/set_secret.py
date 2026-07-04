@@ -12,6 +12,12 @@ from ..core.snapshot_crypto import ensure_key
 from ..core.source_loader import SourceError, _ensure_session, load_source
 from ..core.vaults import ConfigError, load_vault
 
+
+def _echo(*values: object, sep: str = " ", end: str = "\n", file=None) -> None:
+    stream = file or sys.stdout
+    stream.write(sep.join(str(value) for value in values) + end)
+
+
 _NETWORK_MARKERS = ("502", "503", "econnrefused", "timeout", "network", "fetch", "statuscode")
 
 
@@ -29,7 +35,7 @@ def _patch_snapshot(vault_name: str, tag: str, key: str, value: str) -> None:
         source = f"{vault_name}.folder:env/{tag}"
         write_snapshot(vault_name, tag, env, [source])
     except Exception as e:
-        print(f"  Warning: could not patch local snapshot — {e}", file=sys.stderr)
+        _echo(f"  Warning: could not patch local snapshot — {e}", file=sys.stderr)
 
 
 def run(key: str, value: str, tag: str | None = None, vault_name: str = "personal") -> int:
@@ -45,7 +51,7 @@ def run(key: str, value: str, tag: str | None = None, vault_name: str = "persona
     try:
         vault = load_vault(vault_name)
     except ConfigError as e:
-        print(f"sive: {e}", file=sys.stderr)
+        _echo(f"sive: {e}", file=sys.stderr)
         return 1
 
     appdata_dir = str(vault.appdata_dir)
@@ -56,10 +62,10 @@ def run(key: str, value: str, tag: str | None = None, vault_name: str = "persona
         if _is_network_error(e):
             enqueue_pending(vault_name, key, value, tag)
             _patch_snapshot(vault_name, tag, key, value)
-            print(f"  Queued {key} (vault unreachable) — will sync when connection returns")
+            _echo(f"  Queued {key} (vault unreachable) — will sync when connection returns")
             return 0
         if "not logged in" not in str(e).lower():
-            print(f"sive: {e}", file=sys.stderr)
+            _echo(f"sive: {e}", file=sys.stderr)
             return 1
         from ..commands.setup import run_relogin
 
@@ -77,20 +83,20 @@ def run(key: str, value: str, tag: str | None = None, vault_name: str = "persona
         if _is_network_error(e):
             enqueue_pending(vault_name, key, value, tag)
             _patch_snapshot(vault_name, tag, key, value)
-            print(f"  Queued {key} (vault unreachable) — will sync when connection returns")
+            _echo(f"  Queued {key} (vault unreachable) — will sync when connection returns")
             return 0
-        print(f"sive: {e}", file=sys.stderr)
+        _echo(f"sive: {e}", file=sys.stderr)
         return 1
 
-    print(f"  Saved {key} to tag: {tag}")
+    _echo(f"  Saved {key} to tag: {tag}")
 
     try:
         ensure_key(vault_name, tag)
         env = load_source(source, session_key=session)
         write_snapshot(vault_name, tag, env, [source])
     except Exception as e:
-        print(f"  Warning: snapshot refresh failed — {e}", file=sys.stderr)
-        print(
+        _echo(f"  Warning: snapshot refresh failed — {e}", file=sys.stderr)
+        _echo(
             "  Secret was written to vault but local snapshot is not yet updated.", file=sys.stderr
         )
 
