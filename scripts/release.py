@@ -28,14 +28,16 @@ except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 unsupported by p
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT_NAME = "sive"
-GITHUB_TARBALL = "https://github.com/PeachlifeAB/sive/archive/refs/tags/{version}.tar.gz"
+GITHUB_SDIST = (
+    "https://github.com/PeachlifeAB/sive/releases/download/v{version}/sive-{version}.tar.gz"
+)
 VERSION_RE = r"\d+\.\d+\.\d+(?:[.-][A-Za-z0-9]+)?"
 VERSION_FULL_RE = re.compile(f"^{VERSION_RE}$")
 INIT_VERSION_RE = re.compile(r'__version__ = "[^\"]+"')
 PYPROJECT_VERSION_RE = re.compile(r'^version = "[^\"]+"', re.MULTILINE)
 METADATA_VERSION_RE = re.compile(r'PLUGIN\.version = "[^\"]+"')
 FORMULA_URL_RE = re.compile(
-    r'url "https://github\.com/PeachlifeAB/sive/archive/refs/tags/[^\"]+\.tar\.gz"'
+    r'url "https://github\.com/PeachlifeAB/sive/(?:archive/refs/tags|releases/download/v)[^\"]+\.tar\.gz"'
 )
 FORMULA_SHA_RE = re.compile(r'sha256 "[a-f0-9]{64}"')
 FORMULA_TEST_RE = re.compile(r'assert_match .+, shell_output\("#\{bin\}/sive --version"\)')
@@ -250,18 +252,18 @@ def prepare(version: str, *, dry_run: bool = False) -> None:
     verify_installed_tool(version)
 
 
-def _github_tarball_url(version: str) -> str:
+def _github_sdist_url(version: str) -> str:
     assert_valid_version(version)
-    url = GITHUB_TARBALL.format(version=version)
+    url = GITHUB_SDIST.format(version=version)
     parsed = urllib.parse.urlparse(url)
-    expected_path = f"/PeachlifeAB/sive/archive/refs/tags/{version}.tar.gz"
+    expected_path = f"/PeachlifeAB/sive/releases/download/v{version}/sive-{version}.tar.gz"
     if parsed.scheme != "https" or parsed.netloc != "github.com" or parsed.path != expected_path:
-        raise ReleaseError(f"unexpected release tarball URL: {url}")
+        raise ReleaseError(f"unexpected release sdist URL: {url}")
     return url
 
 
-def tarball_sha256(version: str) -> str:
-    url = _github_tarball_url(version)
+def sdist_sha256(version: str) -> str:
+    url = _github_sdist_url(version)
     response = subprocess.run(
         ["curl", "--fail", "--silent", "--show-error", "--location", url],
         capture_output=True,
@@ -280,11 +282,9 @@ def formula_path(tap: Path) -> Path:
 def update_formula(version: str, *, tap: Path, sha256: str | None) -> None:
     assert_valid_version(version)
     formula = formula_path(tap)
-    digest = sha256 or tarball_sha256(version)
+    digest = sha256 or sdist_sha256(version)
     content = _read_release_text(formula)
-    content = FORMULA_URL_RE.sub(
-        f'url "{GITHUB_TARBALL.format(version=version)}"', content, count=1
-    )
+    content = FORMULA_URL_RE.sub(f'url "{GITHUB_SDIST.format(version=version)}"', content, count=1)
     content = FORMULA_SHA_RE.sub(f'sha256 "{digest}"', content, count=1)
     content = FORMULA_TEST_RE.sub(
         'assert_match version.to_s, shell_output("#{bin}/sive --version")', content, count=1
@@ -297,7 +297,7 @@ def verify_formula(*, tap: Path, expected: str | None = None) -> None:
     formula = formula_path(tap)
     content = _read_release_text(formula)
     version = expected or pyproject_version()
-    if f"/tags/{version}.tar.gz" not in content:
+    if f"/releases/download/v{version}/sive-{version}.tar.gz" not in content:
         raise ReleaseError(f"formula URL does not point at {version}")
     if 'assert_match version.to_s, shell_output("#{bin}/sive --version")' not in content:
         raise ReleaseError("formula test must assert version.to_s")
@@ -328,7 +328,7 @@ def parse_args() -> argparse.Namespace:
     formula_parser = subparsers.add_parser("formula", help="Update Homebrew tap formula")
     formula_parser.add_argument("version", help="Release version, e.g. 0.1.3")
     formula_parser.add_argument("--tap", type=Path, default=ROOT.parent / "homebrew-tap")
-    formula_parser.add_argument("--sha256", help="Use known tarball sha instead of downloading")
+    formula_parser.add_argument("--sha256", help="Use known sdist sha instead of downloading")
 
     formula_verify = subparsers.add_parser("verify-formula", help="Verify Homebrew formula")
     formula_verify.add_argument("--tap", type=Path, default=ROOT.parent / "homebrew-tap")
@@ -346,6 +346,16 @@ def parse_args() -> argparse.Namespace:
     )
 
     return parser.parse_args()
+
+
+def _commit_version_bump(version: str, *, dry_run: bool) -> None:
+    """Commit the version bump so the release tag points at the bumped tree."""
+    if dry_run:
+        echo(f"[dry-run] git add -A && git commit -m 'sive: v{version}'")
+        return
+    run(["git", "add", "-A"])
+    run(["git", "commit", "-m", f"sive: v{version}"])
+    echo(f"committed version bump: v{version}")
 
 
 def _git_tag_and_push(version: str, *, dry_run: bool) -> None:
@@ -398,32 +408,19 @@ def _create_github_release(version: str, *, dry_run: bool) -> str:
 
 
 def _bump_brew_formula(version: str, *, tap: Path, sha256: str, dry_run: bool) -> None:
-    """Update formula and run brew bump-formula-pr if possible."""
+    """Update the owned-tap formula and push it. For a tap we own, the direct push IS the bump."""
     tap = tap.resolve()
     formula = formula_path(tap)
 
     if dry_run:
         echo(f"[dry-run] update formula at {formula}")
-        tarball_url = f"https://github.com/PeachlifeAB/sive/archive/refs/tags/v{version}.tar.gz"
-        cmd = f"cd {tap} && brew bump-formula-pr --version {version} sive --url {tarball_url}"
-        echo(f"[dry-run] {cmd}")
         return
 
     update_formula(version, tap=tap, sha256=sha256)
     run(["git", "add", "Formula/sive.rb"], cwd=tap)
     run(["git", "commit", "-m", f"sive: v{version}"], cwd=tap)
     run(["git", "push", "origin", "main"], cwd=tap)
-
-    try:
-        tarball_url = f"https://github.com/PeachlifeAB/sive/archive/refs/tags/v{version}.tar.gz"
-        run(["brew", "bump-formula-pr", "--version", version, "sive", "--url", tarball_url])
-        echo(f"brew bump-formula-pr submitted for sive v{version}")
-    except subprocess.CalledProcessError:
-        echo(
-            f"brew bump-formula-pr failed (may need interactive approval); "
-            f"formula updated at {formula}",
-            file=sys.stderr,
-        )
+    echo(f"formula bumped and pushed: {formula}")
 
 
 def release(version: str, *, tap: Path, dry_run: bool) -> None:
@@ -435,6 +432,7 @@ def release(version: str, *, tap: Path, dry_run: bool) -> None:
     require_git_clean(warn=dry_run)
     require_git_clean(cwd=tap.resolve(), warn=dry_run)
     prepare(version, dry_run=dry_run)
+    _commit_version_bump(version, dry_run=dry_run)
     _git_tag_and_push(version, dry_run=dry_run)
     sha256 = _create_github_release(version, dry_run=dry_run)
     _bump_brew_formula(version, tap=tap, sha256=sha256, dry_run=dry_run)

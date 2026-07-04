@@ -30,6 +30,11 @@ def _version_string() -> str:
             return f"sive {__version__}"
 
         repo_root = repo_result.stdout.strip()
+        # Only trust the hash when cli.py is at <repo>/src/sive/cli.py (a dev checkout);
+        # an installed copy in site-packages would otherwise resolve an ancestor repo
+        # such as Homebrew's and report its hash.
+        if os.path.join(repo_root, "src", "sive") != package_dir:
+            return f"sive {__version__}"
         result = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
             capture_output=True,

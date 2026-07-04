@@ -61,7 +61,7 @@ def test_formula_update_enforces_version_assertion(tmp_path):
     )
 
     content = formula.read_text(encoding="utf-8")
-    assert "/tags/0.1.3.tar.gz" in content
+    assert "/releases/download/v0.1.3/sive-0.1.3.tar.gz" in content
     assert 'sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' in content
     assert 'depends_on "uv"' not in content
     assert "include Language::Python::Virtualenv" in content
