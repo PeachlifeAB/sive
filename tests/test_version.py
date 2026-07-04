@@ -22,7 +22,7 @@ def test_version_flag_via_cli():
     assert result.returncode == 0
     output = result.stdout + result.stderr  # argparse may print to stderr on some versions
     assert "sive" in output
-    assert "0.1.3" in output
+    assert "0.1.5" in output
 
 
 def test_version_flag_includes_commit_hash():
@@ -34,5 +34,5 @@ def test_version_flag_includes_commit_hash():
         text=True,
     )
     output = result.stdout + result.stderr
-    # Either "sive 0.1.3 (abc1234)" if in a git repo, or "sive 0.1.3" if not
-    assert re.search(r"sive 0\.1\.3( \([0-9a-f]+\))?", output)
+    # Either "sive 0.1.5 (abc1234)" if in a git repo, or "sive 0.1.5" if not
+    assert re.search(r"sive 0\.1\.5( \([0-9a-f]+\))?", output)

@@ -1,7 +1,7 @@
 PLUGIN = {}
 
 PLUGIN.name = "sive"
-PLUGIN.version = "0.1.3"
+PLUGIN.version = "0.1.5"
 PLUGIN.description = "sive — sync environment variables and secrets from vaults into your shell"
 PLUGIN.homepage = "https://github.com/davidaberg/sive"
 PLUGIN.license = "MIT"
