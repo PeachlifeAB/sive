@@ -42,3 +42,36 @@ def test_refresh_continues_after_invalid_source(capsys):
     assert exit_code == 1
     assert "invalid source 'global'" in captured.err
     mock_key.assert_called_once_with("personal", "test")
+
+
+def test_refresh_reuses_caller_session_key_without_reunlocking(tmp_path):
+    """A caller-supplied session_key must flow to sync() and load_source() as-is —
+    deriving a second unlock for the same appdata dir invalidates the caller's
+    own session key on disk (each `bw unlock` overwrites the vault's active key
+    material), which is exactly what broke `sive setup`'s post-login tag fetch."""
+    from sive.core.vaults import VaultConfig
+
+    vault = VaultConfig(name="personal", server="https://vw.example.com", appdata_dir=tmp_path)
+
+    with (
+        patch("sive.core.vaults.load_vault", return_value=vault),
+        patch("sive.commands.refresh.sync") as mock_sync,
+        patch("sive.commands.refresh.ensure_key"),
+        patch("sive.commands.refresh.load_source", return_value={}) as mock_load_source,
+        patch("sive.commands.refresh.write_snapshot"),
+        patch(
+            "sive.commands.refresh._ensure_session", return_value="caller-session"
+        ) as mock_ensure,
+    ):
+        exit_code = run(
+            vault_name="personal",
+            sources=["personal.folder:env/global"],
+            session_key="caller-session",
+        )
+
+    assert exit_code == 0
+    mock_ensure.assert_called_once_with("personal", "caller-session", appdata_dir=str(tmp_path))
+    mock_sync.assert_called_once_with("caller-session", appdata_dir=str(tmp_path))
+    mock_load_source.assert_called_once_with(
+        "personal.folder:env/global", session_key="caller-session"
+    )

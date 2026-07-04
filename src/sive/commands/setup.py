@@ -209,7 +209,14 @@ def _run_login() -> tuple[int, str | None, str | None]:
 
     from .refresh import run as run_refresh
 
-    if ui.spin("Running initial refresh...", lambda: run_refresh(vault_name=vault_name)) != 0:
+    # Reuse this login's session key rather than letting refresh derive its own —
+    # each `bw unlock` overwrites the vault's active key material for this appdata
+    # dir on disk, silently invalidating any session key issued by a prior unlock.
+    refresh_rc = ui.spin(
+        "Running initial refresh...",
+        lambda: run_refresh(vault_name=vault_name, session_key=session_key),
+    )
+    if refresh_rc != 0:
         _echo("  Warning: initial refresh failed — run 'sive refresh' manually.", file=sys.stderr)
 
     _patch_mise_config()

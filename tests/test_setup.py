@@ -57,6 +57,48 @@ def test_setup_skip_keychain_still_patches_mise_config(capsys):
     mock_ensure_bw_cli.assert_called_once_with()
 
 
+def test_run_login_passes_own_session_key_to_refresh():
+    """_run_login must hand refresh its own session_key rather than letting
+    refresh derive a fresh unlock — a second unlock for the same appdata dir
+    overwrites the vault's active key material and invalidates the first
+    session, breaking anything downstream (e.g. run_project_setup's tag fetch)
+    that still expects the login's session key to be valid."""
+    from sive.core.vaults import VaultConfig
+
+    with (
+        patch("sive.commands.setup.ensure_bw_cli", return_value=True),
+        patch("sive.commands.setup.write_vault_stub"),
+        patch(
+            "sive.commands.setup.load_vault",
+            return_value=VaultConfig(
+                name="personal",
+                server="https://vw.example.com",
+                appdata_dir=Path("/tmp/sive-personal"),
+            ),
+        ),
+        patch("sive.commands.setup.set_server", return_value=False),
+        patch(
+            "sive.commands.setup.get_status",
+            return_value={"status": "locked", "userEmail": "me@example.com"},
+        ),
+        patch("sive.commands.setup.unlock", return_value="the-session-key"),
+        patch("sive.commands.setup.store_password"),
+        patch("sive.commands.setup.store_email"),
+        patch("sive.core.snapshot_crypto.ensure_key"),
+        patch("sive.commands.refresh.run", return_value=0) as mock_run_refresh,
+        patch("sive.commands.setup._patch_mise_config"),
+        patch("sive.core.ui.style"),
+        patch("sive.core.ui.spin", side_effect=lambda _title, fn: fn()),
+        patch("sive.core.ui.input", side_effect=["me@example.com"]),
+        patch("sive.core.ui.password", return_value="secret"),
+        patch("sive.core.ui.confirm", return_value=True),
+    ):
+        exit_code = setup.run()
+
+    assert exit_code == 0
+    mock_run_refresh.assert_called_once_with(vault_name="personal", session_key="the-session-key")
+
+
 def test_setup_idempotent_when_already_unlocked_and_password_stored(capsys):
     """Repeat setup with bw unlocked + password stored: zero prompts, just mise config."""
     from sive.core.vaults import VaultConfig

@@ -18,12 +18,21 @@ def _echo(*values: object, sep: str = " ", end: str = "\n", file=None) -> None:
     stream.write(sep.join(str(value) for value in values) + end)
 
 
-def run(vault_name: str = "personal", sources: list[str] | None = None) -> int:
+def run(
+    vault_name: str = "personal",
+    sources: list[str] | None = None,
+    *,
+    session_key: str | None = None,
+) -> int:
     """
     Unlock vault, resolve sources, write one encrypted snapshot per tag.
 
     Sources default to active tags from mise config when not supplied.
     Always exits non-zero on failure (unlike _mise-env which must exit 0).
+
+    Pass session_key when a caller already holds a valid bw session (e.g. right
+    after login) — deriving a second unlock for the same appdata dir overwrites
+    the vault's active key material on disk and invalidates the caller's session.
     """
     if sources is None:
         sources = _default_sources(vault_name)
@@ -37,7 +46,7 @@ def run(vault_name: str = "personal", sources: list[str] | None = None) -> int:
         from ..core.vaults import load_vault
 
         vault = load_vault(vault_name)
-        session = _ensure_session(vault_name, None, appdata_dir=str(vault.appdata_dir))
+        session = _ensure_session(vault_name, session_key, appdata_dir=str(vault.appdata_dir))
         sync(session, appdata_dir=str(vault.appdata_dir))
         _echo(f"  synced vault '{vault_name}'")
     except Exception as e:
@@ -59,7 +68,7 @@ def run(vault_name: str = "personal", sources: list[str] | None = None) -> int:
             continue
 
         try:
-            env = load_source(source)
+            env = load_source(source, session_key=session)
         except SourceError as e:
             _echo(f"sive: refresh failed for tag '{tag}': {e}", file=sys.stderr)
             failed += 1
