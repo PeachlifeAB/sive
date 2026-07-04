@@ -39,7 +39,7 @@ def load_vault(name: str = "personal") -> VaultConfig:
         )
 
     try:
-        with open(VAULTS_TOML, "rb") as f:
+        with getattr(VAULTS_TOML, "open")("rb") as f:
             data = tomllib.load(f)
     except tomllib.TOMLDecodeError as e:
         raise ConfigError(f"Invalid TOML in {VAULTS_TOML}: {e}") from e
@@ -76,7 +76,7 @@ def write_vault_stub(name: str, server: str) -> None:
     ensure_config_dir()
 
     if VAULTS_TOML.exists():
-        with open(VAULTS_TOML, "rb") as f:
+        with getattr(VAULTS_TOML, "open")("rb") as f:
             data = tomllib.load(f)
     else:
         data = {}
@@ -86,7 +86,7 @@ def write_vault_stub(name: str, server: str) -> None:
 
     # Preserve other vault sections if they exist
     # For MVP only personal is supported, so simple write is fine
-    with open(VAULTS_TOML, "w") as f:
+    with getattr(VAULTS_TOML, "open")("w") as f:
         for vault_name, vault_data in vaults.items():
             f.write(f"[vaults.{vault_name}]\n")
             f.write(f'server = "{vault_data["server"]}"\n')

@@ -7,17 +7,39 @@ import subprocess
 import sys
 
 from . import __version__
+from .core import ui
+
+
+def _echo(*values: object, sep: str = " ", end: str = "\n", file=None) -> None:
+    stream = file or sys.stdout
+    stream.write(sep.join(str(value) for value in values) + end)
 
 
 def _version_string() -> str:
     try:
         import os
 
+        package_dir = os.path.dirname(os.path.abspath(__file__))
+        repo_result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            cwd=package_dir,
+        )
+        if repo_result.returncode != 0:
+            return f"sive {__version__}"
+
+        repo_root = repo_result.stdout.strip()
+        # Only trust the hash when cli.py is at <repo>/src/sive/cli.py (a dev checkout);
+        # an installed copy in site-packages would otherwise resolve an ancestor repo
+        # such as Homebrew's and report its hash.
+        if os.path.join(repo_root, "src", "sive") != package_dir:
+            return f"sive {__version__}"
         result = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
             capture_output=True,
             text=True,
-            cwd=os.path.dirname(os.path.abspath(__file__)),
+            cwd=repo_root,
         )
         if result.returncode == 0:
             short_hash = result.stdout.strip()
@@ -31,17 +53,18 @@ def main() -> None:
     try:
         _main()
     except KeyboardInterrupt:
-        print("\nAborted.", file=sys.stderr)
+        _echo("\nAborted.", file=sys.stderr)
         sys.exit(130)
 
 
 def _print_top_level_help() -> None:
-    print(
+    _echo(
         "usage: sive [-h] [--version] <command> [<args>]\n\n"
         "Make secrets available automatically for the current project.\n\n"
         "commands:\n"
         "  setup     Configure current project directory\n"
-        "  set       Write a secret to a tag folder\n\n"
+        "  set       Write a secret to a tag folder\n"
+        "  refresh   Sync local encrypted snapshots from the vault\n\n"
         "options:\n"
         "  -h, --help  show this help message and exit\n"
         "  --version   show program's version number and exit\n\n"
@@ -49,7 +72,8 @@ def _print_top_level_help() -> None:
         "  sive setup\n"
         "  sive setup --tag work --tag personal\n"
         "  sive set OPENAI_API_KEY\n"
-        "  sive set OPENAI_API_KEY --tag work"
+        "  sive set OPENAI_API_KEY --tag work\n"
+        "  sive refresh"
     )
 
 
@@ -65,9 +89,10 @@ def _main() -> None:
             "Examples:\n"
             "  sive setup\n"
             "  sive setup --tag work --tag personal\n"
-            "  sive set OPENAI_API_KEY sk-123\n"
-            "  sive set OPENAI_API_KEY sk-123 --tag work\n"
-            "  echo 'my$ecret&value' | sive set MY_KEY --stdin"
+            "  sive set OPENAI_API_KEY\n"
+            "  sive set OPENAI_API_KEY --tag work\n"
+            "  printf %s 'my-secret-value' | sive set MY_KEY\n"
+            "  sive refresh"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -105,7 +130,9 @@ def _main() -> None:
         help="Tag name, e.g. global",
     )
     # sive refresh
-    refresh_parser = subparsers.add_parser("refresh", help=argparse.SUPPRESS)
+    refresh_parser = subparsers.add_parser(
+        "refresh", help="Sync local encrypted snapshots from the vault"
+    )
     refresh_parser.add_argument(
         "--vault", default="personal", help="Vault name (default: personal)"
     )
@@ -154,14 +181,13 @@ def _main() -> None:
         if not sys.stdin.isatty():
             value = sys.stdin.read().strip()
             if not value:
-                print("sive: stdin is empty", file=sys.stderr)
+                _echo("sive: stdin is empty", file=sys.stderr)
                 sys.exit(1)
         else:
             try:
-                from .core import ui
                 value = ui.password(f"Value for {args.key}")
             except EOFError:
-                print("No input received, aborting.", file=sys.stderr)
+                _echo("No input received, aborting.", file=sys.stderr)
                 sys.exit(1)
         sys.exit(run(args.key, value, tag=args.tag, vault_name=args.vault))
 

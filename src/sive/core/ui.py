@@ -4,16 +4,56 @@ from __future__ import annotations
 
 import builtins
 import getpass as _getpass
+import shutil
 import subprocess
 import sys
-import threading
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TextIO, TypeVar
 
 _T = TypeVar("_T")
 
 
+def echo(*values: object, sep: str = " ", end: str = "\n", file: TextIO | None = None) -> None:
+    """Write terminal output without using debug-style print calls."""
+    stream = file or sys.stdout
+    stream.write(sep.join(str(value) for value in values) + end)
 
-def style(text: str, *, bold: bool = False, foreground: str = "", background: str = "", padding: str = "") -> None:
+
+def eprint(*values: object, sep: str = " ", end: str = "\n") -> None:
+    """Write terminal error output."""
+    echo(*values, sep=sep, end=end, file=sys.stderr)
+
+
+def ensure_homebrew_command(
+    command: str,
+    formula: str,
+    noun: str,
+    *,
+    fallback: str = "",
+) -> bool:
+    """Ensure a command exists, offering a Homebrew install when missing."""
+    if shutil.which(command):
+        return True
+
+    echo(f"  {noun} not found.")
+    if confirm(f"Install {noun} with Homebrew now?", default=True):
+        try:
+            install = subprocess.run(["brew", "install", formula])
+        except FileNotFoundError:
+            install = subprocess.CompletedProcess(["brew", "install", formula], 127)
+        if install.returncode == 0 and shutil.which(command):
+            return True
+        echo(f"  Homebrew install did not make '{command}' available.")
+
+    echo(f"  Install it: brew install {formula}")
+    if fallback:
+        echo(f"  Or: {fallback}")
+    return False
+
+
+def style(
+    text: str, *, bold: bool = False, foreground: str = "", background: str = "", padding: str = ""
+) -> None:
     """Print styled text via gum style; falls back to plain print."""
     try:
         args = ["style"]
@@ -30,7 +70,7 @@ def style(text: str, *, bold: bool = False, foreground: str = "", background: st
         if result.returncode == 130:
             raise KeyboardInterrupt
     except FileNotFoundError:
-        builtins.print(text)
+        echo(text)
 
 
 def input(prompt: str, *, placeholder: str = "") -> str:  # noqa: A001
@@ -86,42 +126,9 @@ def confirm(prompt: str, *, default: bool = True) -> bool:
 
 
 def spin(title: str, fn: Callable[[], _T]) -> _T:
-    """Run fn() in a thread while showing an animated spinner. Returns fn's result.
-
-    Falls back to a plain print + blocking call if gum is not available.
-    Propagates exceptions raised by fn.
-    """
-    result_box: list[_T] = []
-    exc_box: list[BaseException] = []
-
-    def worker() -> None:
-        try:
-            result_box.append(fn())
-        except BaseException as e:
-            exc_box.append(e)
-
-    try:
-        subprocess.run(["gum", "--version"], capture_output=True, check=True)
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        builtins.print(f"  {title}")
-        try:
-            result_box.append(fn())
-        except BaseException as e:
-            raise e
-        return result_box[0]
-
-    t = threading.Thread(target=worker, daemon=True)
-    spinner = subprocess.Popen(
-        ["gum", "spin", "--spinner", "dot", "--title", title, "--", "sleep", "3600"],
-    )
-    t.start()
-    t.join()
-    spinner.terminate()
-    spinner.wait()
-
-    if exc_box:
-        raise exc_box[0]
-    return result_box[0]
+    """Show progress text, then run fn() and propagate its result."""
+    echo(f"  {title}")
+    return fn()
 
 
 def choose(header: str, options: list[str], *, selected: list[str] | None = None) -> list[str]:
@@ -130,13 +137,19 @@ def choose(header: str, options: list[str], *, selected: list[str] | None = None
         return []
     try:
         args = [
-            "gum", "choose",
+            "gum",
+            "choose",
             "--no-limit",
-            "--header", header,
-            "--cursor", "> ",
-            "--cursor-prefix", "[ ] ",
-            "--selected-prefix", "[✓] ",
-            "--unselected-prefix", "[ ] ",
+            "--header",
+            header,
+            "--cursor",
+            "> ",
+            "--cursor-prefix",
+            "[ ] ",
+            "--selected-prefix",
+            "[✓] ",
+            "--unselected-prefix",
+            "[ ] ",
         ]
         if selected:
             args += ["--selected", ",".join(selected)]
@@ -148,9 +161,9 @@ def choose(header: str, options: list[str], *, selected: list[str] | None = None
             raise FileNotFoundError
         return [line.strip() for line in result.stdout.splitlines() if line.strip()]
     except FileNotFoundError:
-        builtins.print(f"  {header}")
+        echo(f"  {header}")
         for opt in options:
-            builtins.print(f"    • {opt}")
+            echo(f"    • {opt}")
         raw = builtins.input("  Enter choices (space or comma separated): ").strip()
         chosen = [t.strip() for t in raw.replace(",", " ").split() if t.strip()]
         valid = set(options)

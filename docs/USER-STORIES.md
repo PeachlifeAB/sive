@@ -117,7 +117,7 @@ These must work before anything else is built.
 * internal diagnostics output:
 
 ```
-sive 0.1.0
+sive 0.1.3
 
 Active sources:
   personal.folder:env/global   14 vars   cache 4m old

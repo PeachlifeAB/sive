@@ -33,9 +33,7 @@ def vault_config():
     return vault
 
 
-def test_set_queues_entry_when_vault_unreachable(
-    state_dir: Path, vault_config: MagicMock
-) -> None:
+def test_set_queues_entry_when_vault_unreachable(state_dir: Path, vault_config: MagicMock) -> None:
     network_error = SourceError("bw unlock failed: ErrorResponse { statusCode: 502 }")
 
     with (
@@ -87,9 +85,7 @@ def test_set_patches_snapshot_when_vault_unreachable(
     assert env["EXISTING"] == "value"
 
 
-def test_set_fails_hard_on_auth_error(
-    state_dir: Path, vault_config: MagicMock
-) -> None:
+def test_set_fails_hard_on_auth_error(state_dir: Path, vault_config: MagicMock) -> None:
     auth_error = SourceError("not logged in")
 
     with (

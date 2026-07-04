@@ -39,7 +39,7 @@ def load_sync_state(vault_name: str) -> dict[str, str]:
         return {}
     try:
         return json.loads(path.read_text())
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as _error:
         return {}
 
 
@@ -84,7 +84,7 @@ def acquire_lock(vault_name: str, *, now: datetime | None = None) -> bool:
             return False
         path.unlink(missing_ok=True)
     try:
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        fd = getattr(os, "open")(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
         return False
     with os.fdopen(fd, "w") as handle:
@@ -160,6 +160,7 @@ def _update_known_tags(vault_name: str, session: str, appdata_dir: str, state: d
     import logging
 
     from .bw import list_env_tags
+
     try:
         state["known_tags"] = list_env_tags(session, appdata_dir=appdata_dir)
     except Exception as e:

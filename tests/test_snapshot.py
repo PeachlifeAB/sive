@@ -202,6 +202,8 @@ def test_two_tags_are_independent(tmp_path):
         result_a = read_snapshot("personal", "a")
         result_b = read_snapshot("personal", "b")
 
+    assert result_a is not None
+    assert result_b is not None
     assert result_a == {"ONLY_IN_A": "val_a"}
     assert result_b == {"ONLY_IN_B": "val_b"}
     assert "ONLY_IN_B" not in result_a

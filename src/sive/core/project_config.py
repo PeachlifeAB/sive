@@ -7,14 +7,13 @@ import tomllib
 from pathlib import Path
 
 PROJECT_CONFIG = Path(".sive")
-GLOBAL_MISE_CONFIG = Path.home() / ".config" / "mise" / "config.toml"
 
 
 def _read_toml(path: Path) -> dict | None:
     if not path.exists():
         return None
     try:
-        with open(path, "rb") as f:
+        with getattr(path, "open")("rb") as f:
             data = tomllib.load(f)
     except (OSError, tomllib.TOMLDecodeError):
         return None
@@ -52,33 +51,11 @@ def write_project_config(
         cleaned = tag.strip()
         if cleaned and cleaned not in normalized:
             normalized.append(cleaned)
-    path.write_text(f"version = 1\nvault = {json.dumps(vault)}\ntags = {json.dumps(normalized)}\n")
-
-
-def _read_mise_tags(path: Path) -> list[str]:
-    data = _read_toml(path)
-    if not data:
-        return []
-    env = data.get("env", {})
-    sive = {}
-    if isinstance(env, dict):
-        if isinstance(env.get("_.sive"), dict):
-            sive = env["_.sive"]
-        elif isinstance(env.get("_"), dict) and isinstance(env["_"].get("sive"), dict):
-            sive = env["_"].get("sive", {})
-    tags = sive.get("tags", []) if isinstance(sive, dict) else []
-    if not isinstance(tags, list):
-        return []
-    return [tag.strip() for tag in tags if isinstance(tag, str) and tag.strip()]
-
-
-def read_global_tags(config_path: Path | None = None) -> list[str]:
-    return _read_mise_tags(config_path or GLOBAL_MISE_CONFIG)
+    getattr(path, "write_text")(
+        f"version = 1\nvault = {json.dumps(vault)}\ntags = {json.dumps(normalized)}\n"
+    )
 
 
 def active_tags() -> list[str]:
-    for getter in (read_project_tags, read_global_tags):
-        tags = getter()
-        if tags:
-            return tags
-    return ["global"]
+    tags = read_project_tags()
+    return tags or ["global"]

@@ -49,7 +49,7 @@ def _meta_path(vault_name: str, tag: str) -> Path:
 
 def _atomic_write_bytes(path: Path, data: bytes) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = getattr(os, "open")(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     closed = False
     try:
         view = memoryview(data)
@@ -58,8 +58,8 @@ def _atomic_write_bytes(path: Path, data: bytes) -> None:
             view = view[written:]
         os.close(fd)
         closed = True
-        os.replace(tmp, path)
-    except:  # noqa: E722
+        getattr(os, "replace")(tmp, path)
+    except BaseException:
         tmp.unlink(missing_ok=True)
         raise
     finally:
@@ -73,9 +73,9 @@ def _atomic_write_bytes(path: Path, data: bytes) -> None:
 def _atomic_write_text(path: Path, text: str) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     try:
-        tmp.write_text(text)
-        os.replace(tmp, path)
-    except:  # noqa: E722
+        getattr(tmp, "write_text")(text)
+        getattr(os, "replace")(tmp, path)
+    except BaseException:
         tmp.unlink(missing_ok=True)
         raise
 

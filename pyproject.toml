@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sive"
-version = "0.1.0"
+version = "0.1.5"
 description = "Sync environment variables and secrets from vaults into your shell"
 requires-python = ">=3.11"
 dependencies = [
@@ -16,6 +16,9 @@ sive = "sive.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sive"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/sive/mise_hook/env.sh" = "sive/mise_hook/env.sh"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

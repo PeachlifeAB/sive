@@ -9,6 +9,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from . import ui
+
 
 class BWError(Exception):
     pass
@@ -40,19 +42,13 @@ def _run(
         full_env["BITWARDENCLI_APPDATA_DIR"] = str(appdata_dir)
 
     try:
-        result = subprocess.run(
-            ["bw", "--nointeraction"] + args,
-            capture_output=True,
-            text=True,
-            env=full_env,
-            timeout=timeout,
-        )
-    except FileNotFoundError:
-        raise BWNotInstalledError(
-            "'bw' CLI not found. Install it via mise:\n  mise use -g \"npm:@bitwarden/cli@latest\""
-        )
-    except subprocess.TimeoutExpired:
-        raise BWError(f"bw command timed out after {timeout}s: bw {' '.join(args[:2])}")
+        result = _run_bw_command(args, full_env, timeout)
+    except FileNotFoundError as error:
+        if not ensure_bw_cli():
+            raise _bw_not_installed_error() from error
+        result = _run_bw_command(args, full_env, timeout)
+    except subprocess.TimeoutExpired as error:
+        raise BWError(f"bw command timed out after {timeout}s: bw {' '.join(args[:2])}") from error
 
     if result.returncode != 0:
         stderr = result.stderr.strip()
@@ -63,6 +59,38 @@ def _run(
         raise BWError(f"bw {args[0]} failed: {stderr or result.stdout.strip()}")
 
     return result.stdout.strip()
+
+
+def _run_bw_command(
+    args: list[str],
+    env: dict[str, str],
+    timeout: int,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bw", "--nointeraction"] + args,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=timeout,
+    )
+
+
+def ensure_bw_cli() -> bool:
+    """Ensure the Bitwarden CLI is available, offering Homebrew install if missing."""
+    return ui.ensure_homebrew_command(
+        "bw",
+        "bitwarden-cli",
+        "Bitwarden CLI ('bw')",
+        fallback="npm install -g @bitwarden/cli",
+    )
+
+
+def _bw_install_hint() -> str:
+    return "Install it: brew install bitwarden-cli\nOr: npm install -g @bitwarden/cli"
+
+
+def _bw_not_installed_error() -> BWNotInstalledError:
+    return BWNotInstalledError(f"'bw' CLI not found. {_bw_install_hint()}")
 
 
 def set_server(
@@ -91,7 +119,7 @@ def get_status(*, appdata_dir: str | Path | None = None) -> dict[str, Any]:
     output = _run(["status"], appdata_dir=appdata_dir)
     try:
         return json.loads(output)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as _error:
         return {"status": "unknown"}
 
 
@@ -123,7 +151,7 @@ def list_folders(
     output = _run(["list", "folders", "--session", session_key], appdata_dir=appdata_dir)
     try:
         return json.loads(output)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as _error:
         return []
 
 
@@ -140,7 +168,7 @@ def list_items_in_folder(
     )
     try:
         return json.loads(output)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as _error:
         return []
 
 
@@ -182,7 +210,7 @@ def upsert_note(
     )
     try:
         items = json.loads(output)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as _error:
         items = []
 
     existing = next((i for i in items if i.get("name") == name and i.get("type") == 2), None)

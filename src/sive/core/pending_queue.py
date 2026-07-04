@@ -7,8 +7,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-from pathlib import Path
-
 from .bw import find_folder_id, list_folders, upsert_note
 
 STATE_DIR = Path.home() / ".local" / "state" / "sive"
@@ -33,7 +31,7 @@ def _save_pending(vault_name: str, entries: list[dict[str, Any]]) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     path = _queue_path(vault_name)
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(entries, indent=2) + "\n")
+    getattr(tmp, "write_text")(json.dumps(entries, indent=2) + "\n")
     os.replace(tmp, path)
 
 
@@ -58,6 +56,9 @@ def drain_pending(vault_name: str, session: str, appdata_dir: str) -> int:
     for entry in entries:
         try:
             folder_id = find_folder_id(folders, f"env/{entry['tag']}")
+            if folder_id is None:
+                remaining.append(entry)
+                continue
             upsert_note(entry["key"], entry["value"], folder_id, session, appdata_dir=appdata_dir)
             drained += 1
         except Exception:

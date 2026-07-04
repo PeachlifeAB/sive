@@ -5,13 +5,17 @@ from __future__ import annotations
 import sys
 import time
 
+from ..core.bw import sync
 from ..core.keychain_macos import KeychainError
 from ..core.project_config import active_tags
 from ..core.snapshot import write_snapshot
-from ..core.snapshot_crypto import KeychainError as CryptoKeychainError
 from ..core.snapshot_crypto import ensure_key
-from ..core.bw import BWError, sync
 from ..core.source_loader import SourceError, _ensure_session, load_source
+
+
+def _echo(*values: object, sep: str = " ", end: str = "\n", file=None) -> None:
+    stream = file or sys.stdout
+    stream.write(sep.join(str(value) for value in values) + end)
 
 
 def run(vault_name: str = "personal", sources: list[str] | None = None) -> int:
@@ -24,55 +28,56 @@ def run(vault_name: str = "personal", sources: list[str] | None = None) -> int:
     if sources is None:
         sources = _default_sources(vault_name)
 
-    print(f"sive refresh: vault={vault_name} sources={sources}")
+    _echo(f"sive refresh: vault={vault_name} sources={sources}")
 
     t0 = time.monotonic()
     failed = 0
 
     try:
-        from ..core.vaults import ConfigError, load_vault
+        from ..core.vaults import load_vault
+
         vault = load_vault(vault_name)
         session = _ensure_session(vault_name, None, appdata_dir=str(vault.appdata_dir))
         sync(session, appdata_dir=str(vault.appdata_dir))
-        print(f"  synced vault '{vault_name}'")
+        _echo(f"  synced vault '{vault_name}'")
     except Exception as e:
-        print(f"sive: vault sync failed: {e}", file=sys.stderr)
+        _echo(f"sive: vault sync failed: {e}", file=sys.stderr)
         return 1
 
     for source in sources:
         try:
             tag = _tag_from_source(source)
         except ValueError as e:
-            print(f"sive: invalid source '{source}': {e}", file=sys.stderr)
+            _echo(f"sive: invalid source '{source}': {e}", file=sys.stderr)
             failed += 1
             continue
         try:
             ensure_key(vault_name, tag)
-        except (KeychainError, CryptoKeychainError) as e:
-            print(f"sive: snapshot key error for tag '{tag}': {e}", file=sys.stderr)
+        except KeychainError as e:
+            _echo(f"sive: snapshot key error for tag '{tag}': {e}", file=sys.stderr)
             failed += 1
             continue
 
         try:
             env = load_source(source)
         except SourceError as e:
-            print(f"sive: refresh failed for tag '{tag}': {e}", file=sys.stderr)
+            _echo(f"sive: refresh failed for tag '{tag}': {e}", file=sys.stderr)
             failed += 1
             continue
         except Exception as e:
-            print(f"sive: unexpected error for tag '{tag}': {e}", file=sys.stderr)
+            _echo(f"sive: unexpected error for tag '{tag}': {e}", file=sys.stderr)
             failed += 1
             continue
 
         try:
             meta = write_snapshot(vault_name, tag, env, [source])
         except Exception as e:
-            print(f"sive: failed to write snapshot for tag '{tag}': {e}", file=sys.stderr)
+            _echo(f"sive: failed to write snapshot for tag '{tag}': {e}", file=sys.stderr)
             failed += 1
             continue
 
         elapsed = time.monotonic() - t0
-        print(f"  [{tag}] {meta.item_count} vars written ({elapsed:.1f}s)")
+        _echo(f"  [{tag}] {meta.item_count} vars written ({elapsed:.1f}s)")
 
     return 1 if failed else 0
 

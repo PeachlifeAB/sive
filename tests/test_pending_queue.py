@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from sive.core.pending_queue import drain_pending, enqueue_pending, load_pending
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -61,7 +60,9 @@ def test_drain_calls_upsert_for_each_entry(state_dir: Path) -> None:
 
     with (
         patch("sive.core.pending_queue.list_folders", return_value=mock_folders),
-        patch("sive.core.pending_queue.find_folder_id", side_effect=["folder-global", "folder-work"]),
+        patch(
+            "sive.core.pending_queue.find_folder_id", side_effect=["folder-global", "folder-work"]
+        ),
         patch("sive.core.pending_queue.upsert_note", mock_upsert),
     ):
         drained = drain_pending("personal", session="sess", appdata_dir="/tmp/bw")

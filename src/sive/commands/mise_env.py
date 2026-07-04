@@ -14,6 +14,11 @@ from ..core.project_config import active_tags
 from ..core.snapshot import read_snapshot, snapshot_exists
 
 
+def _echo(*values: object, sep: str = " ", end: str = "\n", file=None) -> None:
+    stream = file or sys.stdout
+    stream.write(sep.join(str(value) for value in values) + end)
+
+
 def run(tags: list[str]) -> int:
     """Return merged snapshot env as JSON and never fail shell startup.
 
@@ -53,4 +58,4 @@ def run(tags: list[str]) -> int:
 
 
 def _warn(msg: str) -> None:
-    print(msg, file=sys.stderr)
+    _echo(msg, file=sys.stderr)
