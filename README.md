@@ -133,6 +133,7 @@ server = "https://vw.yourdomain.com"
 ```bash
 sive setup              # Main onboarding + configure current project directory
 sive set KEY            # Write a secret into the active project tag or an explicit --tag
+sive delete KEY         # Move a key from the active project tag to vault trash
 sive --version
 ```
 
@@ -167,6 +168,9 @@ sive set STRIPE_KEY --tag projectX
 
 # From a script or CI — pipe the value to avoid shell quoting issues
 echo "$SECRET_VALUE" | sive set STRIPE_KEY
+
+# Move a key to the vault trash (equivalent: sive set --delete STRIPE_KEY)
+sive delete STRIPE_KEY
 ```
 
 Tag folder mapping is internal — users only see tag names, never folder paths.

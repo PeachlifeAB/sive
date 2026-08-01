@@ -140,6 +140,21 @@ No value provided.
 Pass a value as an argument, use --stdin, or run interactively.
 ```
 
+### Delete a key
+```bash
+sive set --delete OPENAI_API_KEY
+# equivalent convenience alias
+sive delete OPENAI_API_KEY
+```
+
+Expected behavior:
+1. Resolve the target tag using the same `--tag` and `.sive` rules as writes.
+2. Locate the matching Sive Secure Note only in that tag's vault folder.
+3. Move the item to the vault trash; do not permanently purge it or create a missing tag folder.
+4. Refresh the local snapshot and report clearly if the vault mutation succeeds but snapshot refresh fails.
+
+Delete mode does not accept a value or `--stdin`. If the key is missing or ambiguous, fail without modifying the vault. Secret values must never be printed.
+
 ---
 
 ## Relationship between the commands

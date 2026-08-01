@@ -63,7 +63,8 @@ def _print_top_level_help() -> None:
         "Make secrets available automatically for the current project.\n\n"
         "commands:\n"
         "  setup     Configure current project directory\n"
-        "  set       Write a secret to a tag folder\n"
+        "  set       Write or delete a secret in a tag folder\n"
+        "  delete    Delete a secret by moving it to vault trash\n"
         "  refresh   Sync local encrypted snapshots from the vault\n\n"
         "options:\n"
         "  -h, --help  show this help message and exit\n"
@@ -73,6 +74,7 @@ def _print_top_level_help() -> None:
         "  sive setup --tag work --tag personal\n"
         "  sive set OPENAI_API_KEY\n"
         "  sive set OPENAI_API_KEY --tag work\n"
+        "  sive delete OPENAI_API_KEY --tag work\n"
         "  sive refresh"
     )
 
@@ -92,6 +94,7 @@ def _main() -> None:
             "  sive set OPENAI_API_KEY\n"
             "  sive set OPENAI_API_KEY --tag work\n"
             "  printf %s 'my-secret-value' | sive set MY_KEY\n"
+            "  sive delete OPENAI_API_KEY --tag work\n"
             "  sive refresh"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -141,14 +144,29 @@ def _main() -> None:
     )
 
     # sive set
-    set_parser = subparsers.add_parser("set", help="Write a secret to a tag folder")
+    set_parser = subparsers.add_parser("set", help="Write or delete a secret in a tag folder")
     set_parser.add_argument("key", help="Variable name (e.g. MY_API_KEY)")
+    set_parser.add_argument("value", nargs="?", help="Secret value (avoid for sensitive values)")
     set_parser.add_argument(
         "--tag",
         default=None,
         help="Override the target tag (default: most-specific active tag)",
     )
     set_parser.add_argument("--vault", default="personal", help="Vault name (default: personal)")
+    set_parser.add_argument("--delete", action="store_true", help="Move the key to vault trash")
+    set_parser.add_argument("--stdin", action="store_true", help="Read the secret value from stdin")
+
+    # sive delete
+    delete_parser = subparsers.add_parser(
+        "delete", help="Delete a secret by moving it to vault trash"
+    )
+    delete_parser.add_argument("key", help="Variable name (e.g. MY_API_KEY)")
+    delete_parser.add_argument(
+        "--tag",
+        default=None,
+        help="Override the target tag (default: most-specific active tag)",
+    )
+    delete_parser.add_argument("--vault", default="personal", help="Vault name (default: personal)")
 
     sync_parser = subparsers.add_parser("_sync-vault", help=argparse.SUPPRESS)
     sync_parser.add_argument("vault_name")
@@ -175,10 +193,19 @@ def _main() -> None:
 
         sys.exit(run(vault_name=args.vault, sources=args.sources))
 
-    elif args.command == "set":
+    elif args.command in {"set", "delete"}:
         from .commands.set_secret import run
 
-        if not sys.stdin.isatty():
+        delete = args.command == "delete" or args.delete
+        if delete:
+            if args.command == "set" and (args.value is not None or args.stdin):
+                _echo("sive: --delete does not accept a value or --stdin", file=sys.stderr)
+                sys.exit(1)
+            sys.exit(run(args.key, tag=args.tag, vault_name=args.vault, delete=True))
+
+        if args.value is not None:
+            value = args.value
+        elif args.stdin or not sys.stdin.isatty():
             value = sys.stdin.read().strip()
             if not value:
                 _echo("sive: stdin is empty", file=sys.stderr)
