@@ -1,9 +1,8 @@
 version: "3"
 
 vars:
-  # The Homebrew tap that publishes Sive. Override TAP_REPO when the sibling
-  # checkout lives elsewhere.
   TAP_REPO: '{{.TAP_REPO | default (printf "%s/Developer/owner/PeachlifeAB/homebrew-tap" .HOME)}}'
+  RELEASE: '"{{.TAP_REPO}}/bin/release" --product sive --project-root "{{.ROOT_DIR}}"'
 
 tasks:
   default:
@@ -22,34 +21,55 @@ tasks:
     desc: Run the project test suite with the current project interpreter.
     cmd: uv run python -m pytest
 
-  "release:verify":
-    desc: Verify in-repository release metadata and CLI version agreement.
-    cmd: uv run python scripts/release.py verify
-
   test:
-    desc: Run every local quality and release-metadata gate.
+    desc: Run every local quality gate.
     cmds:
       - task: fmt
       - task: lint
       - task: tests
-      - task: release:verify
 
-  "release:formula-verify":
-    desc: Verify the sibling Homebrew formula contract.
-    cmd: uv run python scripts/release.py verify-formula --tap "{{.TAP_REPO}}"
-
-  "release:preflight":
-    desc: Study current upstream/tap state and gate the Homebrew handoff.
-    cmd: |
-      if [ ! -x "{{.TAP_REPO}}/bin/preflight" ]; then
-        echo "preflight unavailable: {{.TAP_REPO}}/bin/preflight not found" >&2
-        echo "clone https://github.com/PeachlifeAB/homebrew-tap or set TAP_REPO" >&2
-        exit 2
-      fi
-      "{{.TAP_REPO}}/bin/preflight" sive
-
-  "release:dry-run":
-    desc: "Preview the upstream release and local formula handoff. Usage: task release:dry-run VERSION=X.Y.Z"
+  release:prepare:
+    desc: "Prepare a Sive release. Usage: task release:prepare VERSION=X.Y.Z"
     requires:
       vars: [VERSION]
-    cmd: uv run python scripts/release.py release "{{.VERSION}}" --tap "{{.TAP_REPO}}" --dry-run
+    cmd: '{{.RELEASE}} prepare "{{.VERSION}}"'
+
+  release:verify:
+    desc: "Verify prepared Sive release state. Usage: task release:verify VERSION=X.Y.Z"
+    requires:
+      vars: [VERSION]
+    cmd: '{{.RELEASE}} verify "{{.VERSION}}"'
+
+  release:publish:
+    desc: "Publish prepared Sive state and Homebrew bottles. Usage: task release:publish VERSION=X.Y.Z"
+    requires:
+      vars: [VERSION]
+    cmd: '{{.RELEASE}} publish "{{.VERSION}}"'
+
+  release:resume:
+    desc: "Resume a partially completed Sive release. Usage: task release:resume VERSION=X.Y.Z"
+    requires:
+      vars: [VERSION]
+    cmd: '{{.RELEASE}} resume "{{.VERSION}}"'
+
+  release:post-verify:
+    desc: "Verify the published Homebrew upgrade. Usage: task release:post-verify VERSION=X.Y.Z"
+    requires:
+      vars: [VERSION]
+    cmd: '{{.RELEASE}} post-verify "{{.VERSION}}"'
+
+  release:dry-run:
+    desc: "Preview the complete Sive release. Usage: task release:dry-run VERSION=X.Y.Z"
+    requires:
+      vars: [VERSION]
+    cmd: '{{.RELEASE}} release "{{.VERSION}}" --dry-run'
+
+  release:
+    desc: "Run the complete deterministic Sive release. Usage: task release VERSION=X.Y.Z"
+    requires:
+      vars: [VERSION]
+    cmd: '{{.RELEASE}} release "{{.VERSION}}"'
+
+  release:preflight:
+    desc: Study current upstream/tap state and gate the Homebrew handoff.
+    cmd: '"{{.TAP_REPO}}/bin/preflight" sive'

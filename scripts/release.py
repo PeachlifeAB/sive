@@ -35,7 +35,6 @@ GITHUB_SDIST = (
 VERSION_RE = r"\d+\.\d+\.\d+(?:[.-][A-Za-z0-9]+)?"
 VERSION_FULL_RE = re.compile(f"^{VERSION_RE}$")
 TEST_COMMAND = ["uv", "run", "python", "-m", "pytest"]
-INIT_VERSION_RE = re.compile(r'__version__ = "[^\"]+"')
 PYPROJECT_VERSION_RE = re.compile(r'^version = "[^\"]+"', re.MULTILINE)
 FORMULA_URL_RE = re.compile(
     r'url "https://github\.com/PeachlifeAB/sive/(?:archive/refs/tags|releases/download/v)[^\"]+\.tar\.gz"'
@@ -57,11 +56,6 @@ class VersionSource:
 
 
 VERSION_SOURCES = [
-    VersionSource(
-        ROOT / "src/sive/__init__.py",
-        re.compile(r'__version__ = "(?P<version>[^\"]+)"'),
-        "python package",
-    ),
     VersionSource(
         ROOT / "pyproject.toml",
         re.compile(r'^version = "(?P<version>[^\"]+)"', re.MULTILINE),
@@ -126,25 +120,11 @@ def assert_valid_version(version: str) -> None:
 
 def update_repo_versions(version: str) -> None:
     assert_valid_version(version)
-    current = pyproject_version()
-
-    replace_one(
-        ROOT / "src/sive/__init__.py",
-        INIT_VERSION_RE,
-        f'__version__ = "{version}"',
-    )
     replace_one(
         ROOT / "pyproject.toml",
         PYPROJECT_VERSION_RE,
         f'version = "{version}"',
     )
-
-    if current == version:
-        return
-
-    for path in [ROOT / "tests/test_version.py"]:
-        replace_all(path, current, version)
-        replace_all(path, re.escape(current), re.escape(version))
 
 
 def verify_repo_versions() -> None:
@@ -154,10 +134,6 @@ def verify_repo_versions() -> None:
     if mismatches:
         details = ", ".join(f"{label}={value}" for label, value in sorted(versions.items()))
         raise ReleaseError(f"version mismatch: {details}")
-
-    test_version = _read_release_text(ROOT / "tests/test_version.py")
-    if expected not in test_version or re.escape(expected) not in test_version:
-        raise ReleaseError("tests/test_version.py does not assert current version")
 
     version_output = subprocess.run(
         [sys.executable, "-m", PROJECT_NAME, "--version"],
