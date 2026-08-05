@@ -34,6 +34,7 @@ GITHUB_SDIST = (
 )
 VERSION_RE = r"\d+\.\d+\.\d+(?:[.-][A-Za-z0-9]+)?"
 VERSION_FULL_RE = re.compile(f"^{VERSION_RE}$")
+TEST_COMMAND = ["uv", "run", "python", "-m", "pytest"]
 INIT_VERSION_RE = re.compile(r'__version__ = "[^\"]+"')
 PYPROJECT_VERSION_RE = re.compile(r'^version = "[^\"]+"', re.MULTILINE)
 FORMULA_URL_RE = re.compile(
@@ -243,7 +244,7 @@ def verify_installed_tool(version: str) -> None:
 def prepare(version: str, *, dry_run: bool = False) -> None:
     require_not_published(version)
     run(["uv", "run", "ruff", "check", "."])
-    run(["uv", "run", "pytest"])
+    run(TEST_COMMAND)
     if dry_run:
         echo(
             f"[dry-run] bump versions to {version}, uv lock, ruff format, "
@@ -255,7 +256,7 @@ def prepare(version: str, *, dry_run: bool = False) -> None:
     run(["uv", "run", "ruff", "format", "."])
     run(["uv", "run", "ruff", "check", "."])
     verify_repo_versions()
-    run(["uv", "run", "pytest"])
+    run(TEST_COMMAND)
     verify_installed_tool(version)
 
 
@@ -342,7 +343,8 @@ def parse_args() -> argparse.Namespace:
     formula_verify.add_argument("--version", default=None)
 
     release_parser = subparsers.add_parser(
-        "release", help="Full release: prepare + tag + push + GH release + brew bump"
+        "release",
+        help="Prepare upstream release and commit a local Homebrew formula handoff",
     )
     release_parser.add_argument("version", help="Release version, e.g. 0.1.3")
     release_parser.add_argument(
@@ -369,11 +371,11 @@ def _git_tag_and_push(version: str, *, dry_run: bool) -> None:
     tag_name = f"v{version}"
     if dry_run:
         echo(f"[dry-run] git tag -a {tag_name} -m 'Release {version}'")
-        echo(f"[dry-run] git push origin {tag_name}")
+        echo(f"[dry-run] git push origin main {tag_name}")
         return
     run(["git", "tag", "-a", tag_name, "-m", f"Release {version}"])
-    run(["git", "push", "origin", tag_name])
-    echo(f"tagged and pushed: {tag_name}")
+    run(["git", "push", "origin", "main", tag_name])
+    echo(f"pushed main and tag: {tag_name}")
 
 
 def _create_github_release(version: str, *, dry_run: bool) -> str:
@@ -415,23 +417,24 @@ def _create_github_release(version: str, *, dry_run: bool) -> str:
 
 
 def _bump_brew_formula(version: str, *, tap: Path, sha256: str, dry_run: bool) -> None:
-    """Update the owned-tap formula and push it. For a tap we own, the direct push IS the bump."""
+    """Commit the formula locally; the tap push waits for its mandatory bottle."""
     tap = tap.resolve()
     formula = formula_path(tap)
 
     if dry_run:
-        echo(f"[dry-run] update formula at {formula}")
+        echo(f"[dry-run] update and commit formula locally at {formula}")
+        echo("[dry-run] defer tap push until bottle block exists and preflight passes")
         return
 
     update_formula(version, tap=tap, sha256=sha256)
     run(["git", "add", "Formula/sive.rb"], cwd=tap)
     run(["git", "commit", "-m", f"sive: v{version}"], cwd=tap)
-    run(["git", "push", "origin", "main"], cwd=tap)
-    echo(f"formula bumped and pushed: {formula}")
+    echo(f"formula handoff committed locally: {formula}")
+    echo("tap push deferred until bottle block exists and preflight passes")
 
 
 def release(version: str, *, tap: Path, dry_run: bool) -> None:
-    """Full release flow: prepare, tag, push, GH release, brew bump."""
+    """Publish upstream and leave a local formula commit ready for bottling."""
     echo(f"=== Release {version} ===")
     if dry_run:
         echo("*** DRY RUN — nothing will be pushed, created, or modified ***\n")
@@ -444,7 +447,8 @@ def release(version: str, *, tap: Path, dry_run: bool) -> None:
     sha256 = _create_github_release(version, dry_run=dry_run)
     _bump_brew_formula(version, tap=tap, sha256=sha256, dry_run=dry_run)
 
-    echo(f"\n=== Release {version} complete ===")
+    echo(f"\n=== Upstream release {version} and local formula handoff complete ===")
+    echo("Build the bottle, add its block, pass tap preflight, then push tap main.")
 
 
 def main() -> int:

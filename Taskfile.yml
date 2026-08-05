@@ -1,0 +1,55 @@
+version: "3"
+
+vars:
+  # The Homebrew tap that publishes Sive. Override TAP_REPO when the sibling
+  # checkout lives elsewhere.
+  TAP_REPO: '{{.TAP_REPO | default (printf "%s/Developer/owner/PeachlifeAB/homebrew-tap" .HOME)}}'
+
+tasks:
+  default:
+    cmd: task --list
+    silent: true
+
+  fmt:
+    desc: Verify Python formatting.
+    cmd: uv run ruff format --check .
+
+  lint:
+    desc: Run Ruff lint checks.
+    cmd: uv run ruff check .
+
+  tests:
+    desc: Run the project test suite with the current project interpreter.
+    cmd: uv run python -m pytest
+
+  "release:verify":
+    desc: Verify in-repository release metadata and CLI version agreement.
+    cmd: uv run python scripts/release.py verify
+
+  test:
+    desc: Run every local quality and release-metadata gate.
+    cmds:
+      - task: fmt
+      - task: lint
+      - task: tests
+      - task: release:verify
+
+  "release:formula-verify":
+    desc: Verify the sibling Homebrew formula contract.
+    cmd: uv run python scripts/release.py verify-formula --tap "{{.TAP_REPO}}"
+
+  "release:preflight":
+    desc: Study current upstream/tap state and gate the Homebrew handoff.
+    cmd: |
+      if [ ! -x "{{.TAP_REPO}}/bin/preflight" ]; then
+        echo "preflight unavailable: {{.TAP_REPO}}/bin/preflight not found" >&2
+        echo "clone https://github.com/PeachlifeAB/homebrew-tap or set TAP_REPO" >&2
+        exit 2
+      fi
+      "{{.TAP_REPO}}/bin/preflight" sive
+
+  "release:dry-run":
+    desc: "Preview the upstream release and local formula handoff. Usage: task release:dry-run VERSION=X.Y.Z"
+    requires:
+      vars: [VERSION]
+    cmd: uv run python scripts/release.py release "{{.VERSION}}" --tap "{{.TAP_REPO}}" --dry-run

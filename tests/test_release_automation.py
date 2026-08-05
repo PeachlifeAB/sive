@@ -77,3 +77,44 @@ def test_mise_hook_noops_when_sive_binary_is_missing():
 
     assert "command -v sive >/dev/null 2>&1 || return 0" in content
     assert content.index("command -v sive >/dev/null") < content.index('sive_env_json="$(sive')
+
+
+def test_prepare_uses_project_python_for_pytest(monkeypatch):
+    release = load_release_module()
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(release, "require_not_published", lambda version: None)
+    monkeypatch.setattr(release, "run", lambda args, **kwargs: commands.append(args))
+
+    release.prepare("0.1.8", dry_run=True)
+
+    assert ["uv", "run", "python", "-m", "pytest"] in commands
+    assert ["uv", "run", "pytest"] not in commands
+
+
+def test_tag_push_includes_main(monkeypatch):
+    release = load_release_module()
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(release, "run", lambda args, **kwargs: commands.append(args))
+
+    release._git_tag_and_push("0.1.8", dry_run=False)
+
+    assert ["git", "push", "origin", "main", "v0.1.8"] in commands
+
+
+def test_formula_handoff_commits_without_pushing_tap(tmp_path, monkeypatch):
+    release = load_release_module()
+    formula_dir = tmp_path / "Formula"
+    formula_dir.mkdir()
+    (formula_dir / "sive.rb").write_text("class Sive < Formula\nend\n", encoding="utf-8")
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(release, "update_formula", lambda *args, **kwargs: None)
+    monkeypatch.setattr(release, "run", lambda args, **kwargs: commands.append(args))
+
+    release._bump_brew_formula("0.1.8", tap=tmp_path, sha256="a" * 64, dry_run=False)
+
+    assert ["git", "add", "Formula/sive.rb"] in commands
+    assert ["git", "commit", "-m", "sive: v0.1.8"] in commands
+    assert all("push" not in command for command in commands)
